@@ -1327,19 +1327,6 @@ function PrivacyPolicyPage({ onNavigate }) {
     </div>
   );
 }
-```
-
----
-
-## PASSO 4 — Trova il secondo punto
-
-Ora premi di nuovo **Ctrl+F** e cerca:
-```
-function App() {
-// ═══════════════════════════════════════════════════════════════════
-// MAIN APP
-// ═══════════════════════════════════════════════════════════════════
-
 function App() {
   const [page, setPage] = useState("home");
   const [cookieConsent, setCookieConsent] = useState(() => localStorage.getItem("sb_cookie_consent"));
