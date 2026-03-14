@@ -47,7 +47,7 @@ export default async (req) => {
         });
       }
 
-      // Aggiungi contatto alla lista Newsletter (lista 2 di default)
+      // Aggiungi contatto alla lista Newsletter
       const listId = parseInt(process.env.BREVO_NEWSLETTER_LIST_ID || "2");
       const res = await fetch("https://api.brevo.com/v3/contacts", {
         method: "POST",
@@ -59,16 +59,29 @@ export default async (req) => {
         }),
       });
 
-      const data = await res.json();
+      // Gestisci risposta (Brevo può restituire corpo vuoto con 201/204)
+      let data = null;
+      const text = await res.text();
+      if (text) {
+        try { data = JSON.parse(text); } catch (e) { /* ignora */ }
+      }
+
+      if (!res.ok && res.status !== 204) {
+        console.error("Errore creazione contatto:", res.status, data);
+        return new Response(JSON.stringify({ error: "Errore salvataggio contatto", details: data }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       // Invia email di benvenuto
-      await fetch("https://api.brevo.com/v3/smtp/email", {
+      const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers,
         body: JSON.stringify({
           sender: { name: SENDER_NAME, email: SENDER_EMAIL },
           to: [{ email }],
-          subject: "Benvenuto su Soldi Buoni! 🎯",
+          subject: "Benvenuto su Soldi Buoni! \uD83C\uDFAF",
           htmlContent: `
 <!DOCTYPE html>
 <html>
@@ -80,7 +93,7 @@ export default async (req) => {
       <p style="color: #34d399; margin: 8px 0 0; font-size: 14px;">Monitoraggio Rincari Attivato</p>
     </div>
     <div style="padding: 32px;">
-      <h2 style="color: #0f172a; font-size: 20px; margin: 0 0 16px;">Benvenuto! 🎉</h2>
+      <h2 style="color: #0f172a; font-size: 20px; margin: 0 0 16px;">Benvenuto! \uD83C\uDF89</h2>
       <p style="color: #475569; font-size: 15px; line-height: 1.7;">
         Da oggi riceverai una notifica ogni volta che i fornitori di energia, gas, internet 
         o le compagnie assicurative cambieranno le condizioni di mercato.
@@ -90,7 +103,7 @@ export default async (req) => {
       </p>
       <div style="background: #f0fdf4; border-radius: 12px; padding: 20px; margin: 24px 0;">
         <p style="color: #166534; font-size: 14px; margin: 0;">
-          <strong>💡 Consiglio immediato:</strong> Visita <a href="https://soldibuoni.it" style="color: #059669;">soldibuoni.it</a> 
+          <strong>\uD83D\uDCA1 Consiglio immediato:</strong> Visita <a href="https://soldibuoni.it" style="color: #059669;">soldibuoni.it</a> 
           e usa i nostri comparatori per verificare subito se stai pagando troppo per luce, gas o assicurazione.
         </p>
       </div>
@@ -103,6 +116,11 @@ export default async (req) => {
 </html>`,
         }),
       });
+
+      if (!emailRes.ok) {
+        const errText = await emailRes.text();
+        console.error("Errore invio email benvenuto:", emailRes.status, errText);
+      }
 
       return new Response(JSON.stringify({ success: true, message: "Iscrizione completata" }), {
         status: 200,
@@ -132,7 +150,7 @@ export default async (req) => {
         if (scadenze.gommeEstive) attributes.SCADENZA_GOMME_EST = scadenze.gommeEstive;
       }
 
-      await fetch("https://api.brevo.com/v3/contacts", {
+      const contactRes = await fetch("https://api.brevo.com/v3/contacts", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -143,14 +161,19 @@ export default async (req) => {
         }),
       });
 
+      if (!contactRes.ok && contactRes.status !== 204) {
+        const errText = await contactRes.text();
+        console.error("Errore creazione contatto auto:", contactRes.status, errText);
+      }
+
       // Genera HTML delle scadenze per l'email
       let scadenzeHTML = "";
       const scadenzeList = [
-        { label: "💳 Bollo Auto", date: scadenze?.bollo },
-        { label: "🔍 Revisione", date: scadenze?.revisione },
-        { label: "🔧 Tagliando", date: scadenze?.tagliando },
-        { label: "🛞 Gomme invernali", date: scadenze?.gommeInvernali },
-        { label: "☀️ Gomme estive", date: scadenze?.gommeEstive },
+        { label: "\uD83D\uDCB3 Bollo Auto", date: scadenze?.bollo },
+        { label: "\uD83D\uDD0D Revisione", date: scadenze?.revisione },
+        { label: "\uD83D\uDD27 Tagliando", date: scadenze?.tagliando },
+        { label: "\uD83D\uDEDE Gomme invernali", date: scadenze?.gommeInvernali },
+        { label: "\u2600\uFE0F Gomme estive", date: scadenze?.gommeEstive },
       ];
 
       for (const s of scadenzeList) {
@@ -166,13 +189,13 @@ export default async (req) => {
       }
 
       // Invia email di conferma con riepilogo scadenze
-      await fetch("https://api.brevo.com/v3/smtp/email", {
+      const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers,
         body: JSON.stringify({
           sender: { name: SENDER_NAME, email: SENDER_EMAIL },
           to: [{ email, name: nome }],
-          subject: `✅ Promemoria auto ${targa || ""} attivati — Soldi Buoni`,
+          subject: `\u2705 Promemoria auto ${targa || ""} attivati — Soldi Buoni`,
           htmlContent: `
 <!DOCTYPE html>
 <html>
@@ -180,7 +203,7 @@ export default async (req) => {
 <body style="font-family: Arial, sans-serif; background: #f8fafc; padding: 40px 20px;">
   <div style="max-width: 560px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
     <div style="background: linear-gradient(135deg, #F97316, #EA580C); padding: 32px; text-align: center;">
-      <h1 style="color: #fff; font-size: 24px; margin: 0;">🚗 Promemoria Auto Attivati</h1>
+      <h1 style="color: #fff; font-size: 24px; margin: 0;">\uD83D\uDE97 Promemoria Auto Attivati</h1>
       <p style="color: #fff; opacity: 0.9; margin: 8px 0 0; font-size: 16px;">${targa || ""}</p>
     </div>
     <div style="padding: 32px;">
@@ -197,7 +220,7 @@ export default async (req) => {
       </table>
       <div style="background: #fff7ed; border-radius: 12px; padding: 20px; margin: 24px 0; border: 1px solid #fed7aa;">
         <p style="color: #9a3412; font-size: 14px; margin: 0;">
-          <strong>📌 Conserva questa email</strong> — è il riepilogo di tutte le scadenze della tua auto.
+          <strong>\uD83D\uDCCC Conserva questa email</strong> — è il riepilogo di tutte le scadenze della tua auto.
         </p>
       </div>
       <p style="color: #94a3b8; font-size: 13px;">
@@ -209,6 +232,11 @@ export default async (req) => {
 </html>`,
         }),
       });
+
+      if (!emailRes.ok) {
+        const errText = await emailRes.text();
+        console.error("Errore invio email promemoria:", emailRes.status, errText);
+      }
 
       return new Response(JSON.stringify({ success: true, message: "Promemoria attivati" }), {
         status: 200,
