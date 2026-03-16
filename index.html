@@ -54,7 +54,7 @@ const { useState, useEffect, useCallback, useMemo } = React;
 // DATA
 // ═══════════════════════════════════════════════════════════════════
 
-const ENERGY_PROVIDERS = [
+let ENERGY_PROVIDERS = [
   { name: "Enel Energia", tipo: "Variabile", prezzo: 0.067, fisso: 12.5, verde: true, note: "PUN + spread 0.012 €/kWh" },
   { name: "Eni Plenitude", tipo: "Fisso 12m", prezzo: 0.082, fisso: 10, verde: false, note: "Prezzo bloccato 12 mesi" },
   { name: "A2A Energia", tipo: "Fisso 24m", prezzo: 0.089, fisso: 8, verde: true, note: "100% rinnovabile" },
@@ -65,7 +65,7 @@ const ENERGY_PROVIDERS = [
   { name: "Hera Comm", tipo: "Variabile", prezzo: 0.069, fisso: 9, verde: false, note: "PUN + spread 0.014 €/kWh" },
 ];
 
-const GAS_PROVIDERS = [
+let GAS_PROVIDERS = [
   { name: "Enel Energia", tipo: "Variabile", prezzo: 0.42, fisso: 10, note: "PSV + spread 0.03 €/Smc" },
   { name: "Eni Plenitude", tipo: "Fisso 12m", prezzo: 0.52, fisso: 8, note: "Prezzo bloccato 12 mesi" },
   { name: "A2A Energia", tipo: "Fisso 24m", prezzo: 0.55, fisso: 6, note: "Blocco 24 mesi, carbon offset" },
@@ -94,7 +94,7 @@ const HEALTH_INSURANCE = [
   { name: "Previmedical", base: 50, standard: 100, premium: 195, dentale: true, oculistica: true, specialistica: true, ricovero: true, note: "Forte su ricoveri e chirurgia" },
 ];
 
-const INTERNET_PROVIDERS = [
+let INTERNET_PROVIDERS = [
   { name: "Iliad Fibra", tipo: "FTTH", prezzo: 19.99, velocita: "5 Gbps", vincolo: "No", note: "Prezzo per sempre, no sorprese" },
   { name: "Fastweb Casa Light", tipo: "FTTH", prezzo: 27.95, velocita: "2.5 Gbps", vincolo: "No", note: "Modem incluso, WiFi 6" },
   { name: "TIM WiFi Power", tipo: "FTTH", prezzo: 29.90, velocita: "2.5 Gbps", vincolo: "24 mesi", note: "Modem TIM Hub+, assistenza dedicata" },
@@ -104,6 +104,33 @@ const INTERNET_PROVIDERS = [
   { name: "Tiscali UltraFibra", tipo: "FTTH", prezzo: 22.90, velocita: "2.5 Gbps", vincolo: "No", note: "Attivazione gratuita online" },
 ];
 
+
+ // ═══════════════════════════════════════════════════════════════════
+// DYNAMIC PRICE LOADER
+// ═══════════════════════════════════════════════════════════════════
+
+let PRICES_LAST_UPDATED = null;
+let PRICES_SOURCE = "hardcoded";
+
+async function loadDynamicPrices() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch("/.netlify/functions/get-prices", { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return false;
+    const payload = await res.json();
+    if (payload?.data?.energia?.length > 0) { ENERGY_PROVIDERS = payload.data.energia; PRICES_SOURCE = "live"; }
+    if (payload?.data?.gas?.length > 0) { GAS_PROVIDERS = payload.data.gas; PRICES_SOURCE = "live"; }
+    if (payload?.data?.internet?.length > 0) { INTERNET_PROVIDERS = payload.data.internet; PRICES_SOURCE = "live"; }
+    if (payload?.lastUpdated) { PRICES_LAST_UPDATED = new Date(payload.lastUpdated); }
+    console.log("✅ Prezzi live caricati:", PRICES_SOURCE);
+    return true;
+  } catch (err) {
+    console.warn("⚠️ Prezzi dinamici non disponibili, uso fallback hardcoded");
+    return false;
+  }
+}
 const PENSION_FUNDS = [
   { name: "Cometa", tipo: "Negoziale", costo: 0.15, rendimento5y: 4.2, rendimento10y: 5.1, settore: "Metalmeccanici", note: "Più grande fondo negoziale italiano" },
   { name: "Fonte", tipo: "Negoziale", costo: 0.18, rendimento5y: 3.8, rendimento10y: 4.7, settore: "Commercio/Turismo", note: "Per dipendenti del terziario" },
@@ -1366,7 +1393,9 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+loadDynamicPrices().finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+});
 </script>
 </body>
 </html>
