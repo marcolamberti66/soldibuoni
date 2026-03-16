@@ -28,9 +28,9 @@ const SOURCES = {
     "https://www.sostariffe.it/gas/",
   ],
   internet: [
-    "https://selectra.net/internet/confronto/offerte-internet-casa",
-    "https://selectra.net/internet/guida/fibra-ottica-piu-economica",
-    "https://www.sostariffe.it/internet-casa/",
+    "https://selectra.net/internet/guida/offerte/fibra-ottica",
+    "https://selectra.net/internet/guida/offerte/wifi-casa",
+    "https://selectra.net/internet/score",
   ],
 };
 
