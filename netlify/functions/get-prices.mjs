@@ -27,10 +27,3 @@ export default async function handler(req) {
     );
   }
 }
-```
-
-4. **"Commit changes..."** → **"Commit changes"**
-
-Aspetta il deploy verde, poi prima riesegui lo scraper (**Logs → Functions → update-prices → "Run now"**), aspetta che finisca, e poi riprova ad aprire:
-```
-https://soldibuoni.it/.netlify/functions/get-prices
