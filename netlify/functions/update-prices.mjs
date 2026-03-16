@@ -18,18 +18,18 @@ import { getStore } from "@netlify/blobs";
 // Multiple sources = resilience. If one goes down, the others fill in.
 const SOURCES = {
   energia: [
-    "https://selectra.net/energia-elettrica/confronto/offerte-luce",
-    "https://www.facile.it/energia-elettrica/offerte.html",
+    "https://selectra.net/energia/guida/confronto/migliore-offerta-luce",
+    "https://selectra.net/energia/guida/confronto/tariffe-luce-gas",
     "https://www.sostariffe.it/energia-elettrica/",
   ],
   gas: [
-    "https://selectra.net/gas/confronto/offerte-gas",
-    "https://www.facile.it/gas/offerte.html",
+    "https://selectra.net/energia/guida/confronto/migliore-offerta-gas",
+    "https://selectra.net/energia/guida/confronto/tariffe-luce-gas",
     "https://www.sostariffe.it/gas/",
   ],
   internet: [
-    "https://selectra.net/internet/confronto",
-    "https://www.facile.it/adsl/offerte.html",
+    "https://selectra.net/internet/confronto/offerte-internet-casa",
+    "https://selectra.net/internet/guida/fibra-ottica-piu-economica",
     "https://www.sostariffe.it/internet-casa/",
   ],
 };
