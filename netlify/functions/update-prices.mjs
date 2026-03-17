@@ -92,16 +92,16 @@ async function extractWithClaude(category, textsWithSources) {
   - prezzo: number (price in €/kWh, e.g. 0.067. MUST be a decimal number, NOT the annual estimate)
   - fisso: number (monthly fixed cost in €, e.g. 12.5. Use 0 if not mentioned)
   - verde: boolean (true if 100% renewable/green energy)
-  - note: string (brief description, max 60 chars)`,
-  - link: string (URL to the provider's offer page, e.g. "https://www.edison.it/offerte/luce")
+  - note: string (brief description, max 60 chars)
+  - link: string (URL to the provider's offer page, e.g. "https://www.edison.it/offerte/luce")`,
 
     gas: `Array of objects with EXACTLY these fields:
   - name: string (provider name)
   - tipo: string ("Fisso 12m" | "Fisso 24m" | "Variabile")
   - prezzo: number (price in €/Smc, e.g. 0.42. MUST be a decimal number, NOT annual estimate)
   - fisso: number (monthly fixed cost in €. Use 0 if not mentioned)
-  - note: string (brief description, max 60 chars)`,
-  - link: string (URL to the provider's offer page)
+  - note: string (brief description, max 60 chars)
+  - link: string (URL to the provider's offer page)`,
 
     internet: `Array of objects with EXACTLY these fields:
   - name: string (offer name including provider, e.g. "Iliad Fibra")
@@ -109,8 +109,8 @@ async function extractWithClaude(category, textsWithSources) {
   - prezzo: number (monthly price in €, e.g. 19.99)
   - velocita: string (e.g. "2.5 Gbps", "1 Gbps")
   - vincolo: string ("No" | "24 mesi" | "18 mesi" etc.)
-  - note: string (brief description, max 60 chars)`,
-  - link: string (URL to the provider's offer page)
+  - note: string (brief description, max 60 chars)
+  - link: string (URL to the provider's offer page)`,
   };
 
   // Build the source texts block
