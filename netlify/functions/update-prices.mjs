@@ -1,21 +1,5 @@
-// ═══════════════════════════════════════════════════════════════════
-// NETLIFY SCHEDULED FUNCTION — AI-Powered Price Scraper
-// Runs daily at 06:00 UTC via Netlify cron
-// ═══════════════════════════════════════════════════════════════════
-//
-// SETUP: Add these environment variables in Netlify Dashboard → Site → Environment:
-//   ANTHROPIC_API_KEY = your Claude API key (sk-ant-...)
-//
-// SCHEDULE: In netlify.toml add:
-//   [functions."update-prices"]
-//   schedule = "0 6 * * *"
-//
-// ═══════════════════════════════════════════════════════════════════
-
 import { getStore } from "@netlify/blobs";
 
-// ─── Sources to scrape ───────────────────────────────────────────
-// Multiple sources = resilience. If one goes down, the others fill in.
 const SOURCES = {
   energia: [
     "https://selectra.net/energia/guida/confronto/migliore-offerta-luce",
@@ -34,29 +18,57 @@ const SOURCES = {
   ],
 };
 
-// ─── Fetch page text content (strips HTML, keeps meaningful text) ─
+const PROVIDER_URLS = {
+  "edison": "https://www.edison.it/offerte",
+  "enel": "https://www.enel.it/it/luce-gas",
+  "eni plenitude": "https://eniplenitude.com/offerte",
+  "plenitude": "https://eniplenitude.com/offerte",
+  "sorgenia": "https://www.sorgenia.it/offerte-luce-gas",
+  "a2a": "https://www.a2aenergia.eu/offerte",
+  "iren": "https://iren.it/offerte-luce-gas",
+  "hera": "https://www.heracomm.it/offerte",
+  "octopus": "https://octopusenergy.it/tariffe",
+  "e.on": "https://www.eon-energia.com/offerte.html",
+  "wekiwi": "https://www.wekiwi.it/offerte",
+  "illumia": "https://www.illumia.it/offerte",
+  "acea": "https://www.aceaenergia.it/offerte",
+  "nen": "https://nen.it",
+  "engie": "https://www.engie.it/offerte",
+  "fastweb": "https://www.fastweb.it/internet/",
+  "iliad": "https://www.iliad.it/fibra/",
+  "tim": "https://www.tim.it/fisso-e-mobile/fibra",
+  "vodafone": "https://www.vodafone.it/internet/offerte-internet-casa.html",
+  "windtre": "https://www.windtre.it/offerte-fibra/",
+  "sky": "https://www.sky.it/offerte/sky-wifi",
+  "tiscali": "https://casa.tiscali.it/",
+  "aruba": "https://www.aruba.it/fibra.aspx",
+  "eolo": "https://www.eolo.it/home/offerte.html",
+  "linkem": "https://www.linkem.com/offerte",
+};
+
+function guessProviderLink(name) {
+  const lower = (name || "").toLowerCase();
+  for (const [key, url] of Object.entries(PROVIDER_URLS)) {
+    if (lower.includes(key)) return url;
+  }
+  return null;
+}
+
 async function fetchPageText(url) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
-
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
       },
     });
     clearTimeout(timeout);
-
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
     const html = await res.text();
-
-    // Strip HTML to get meaningful text content only
-    // Remove scripts, styles, SVGs, noscript, then tags, then compress whitespace
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -67,12 +79,10 @@ async function fetchPageText(url) {
       .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
-      .replace(/&euro;/g, "€")
+      .replace(/&euro;/g, "\u20AC")
       .replace(/&[a-z]+;/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
-
-    // Truncate to ~12000 chars to stay within Claude's sweet spot
     return text.slice(0, 12000);
   } catch (err) {
     console.error(`Failed to fetch ${url}: ${err.message}`);
@@ -80,68 +90,62 @@ async function fetchPageText(url) {
   }
 }
 
-// ─── Call Claude to extract structured data from raw text ─────────
 async function extractWithClaude(category, textsWithSources) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
   const schemas = {
     energia: `Array of objects with EXACTLY these fields:
-  - name: string (provider name, e.g. "Enel Energia", "Edison", "Sorgenia")
-  - tipo: string ("Fisso 12m" | "Fisso 24m" | "Variabile")
-  - prezzo: number (price in €/kWh, e.g. 0.067. MUST be a decimal number, NOT the annual estimate)
-  - fisso: number (monthly fixed cost in €, e.g. 12.5. Use 0 if not mentioned)
+  - name: string (provider name, e.g. "Edison", "Sorgenia", "Enel Energia". Use the COMPANY name, not the offer name)
+  - offerName: string (the specific offer name, e.g. "Web Luce", "Next Energy Sunlight", "Click Luce")
+  - tipo: string (MUST be exactly one of: "Fisso 12m", "Fisso 24m", "Variabile")
+  - prezzo: number (price in euro/kWh, e.g. 0.102. MUST be a decimal < 1, NOT the annual estimate. For variable offers use the spread value)
+  - fisso: number (monthly fixed cost in euro, e.g. 12.5. Use 0 if not mentioned)
   - verde: boolean (true if 100% renewable/green energy)
-  - note: string (brief description, max 60 chars)
-  - link: string (URL to the provider's offer page, e.g. "https://www.edison.it/offerte/luce")`,
+  - note: string (brief description, max 50 chars)`,
 
     gas: `Array of objects with EXACTLY these fields:
-  - name: string (provider name)
-  - tipo: string ("Fisso 12m" | "Fisso 24m" | "Variabile")
-  - prezzo: number (price in €/Smc, e.g. 0.42. MUST be a decimal number, NOT annual estimate)
-  - fisso: number (monthly fixed cost in €. Use 0 if not mentioned)
-  - note: string (brief description, max 60 chars)
-  - link: string (URL to the provider's offer page)`,
+  - name: string (provider name, e.g. "Edison", "Sorgenia". Use the COMPANY name)
+  - offerName: string (the specific offer name, e.g. "Web Gas", "Next Energy Smart Gas")
+  - tipo: string (MUST be exactly one of: "Fisso 12m", "Fisso 24m", "Variabile")
+  - prezzo: number (price in euro/Smc, e.g. 0.42. MUST be a decimal, NOT annual estimate)
+  - fisso: number (monthly fixed cost in euro. Use 0 if not mentioned)
+  - note: string (brief description, max 50 chars)`,
 
     internet: `Array of objects with EXACTLY these fields:
-  - name: string (offer name including provider, e.g. "Iliad Fibra")
+  - name: string (provider + offer name, e.g. "Iliad Fibra", "Fastweb Casa Light")
   - tipo: string ("FTTH" | "FTTC" | "FWA")
-  - prezzo: number (monthly price in €, e.g. 19.99)
-  - velocita: string (e.g. "2.5 Gbps", "1 Gbps")
-  - vincolo: string ("No" | "24 mesi" | "18 mesi" etc.)
-  - note: string (brief description, max 60 chars)
-  - link: string (URL to the provider's offer page)`,
+  - prezzo: number (monthly price in euro, e.g. 19.99)
+  - velocita: string (download speed, e.g. "2.5 Gbps", "1 Gbps". Use Gbps where >= 1000 Mbps)
+  - vincolo: string ("No" | "24 mesi" | "18 mesi" | "12 mesi" | "6 mesi" | "36 mesi")
+  - note: string (brief description, max 50 chars)`,
   };
 
-  // Build the source texts block
   const sourceBlock = textsWithSources
     .filter((s) => s.text)
     .map((s, i) => `--- SOURCE ${i + 1}: ${s.url} ---\n${s.text}`)
     .join("\n\n");
 
-  if (!sourceBlock.trim()) {
-    console.error(`No source text available for ${category}`);
-    return null;
-  }
+  if (!sourceBlock.trim()) return null;
 
   const prompt = `Sei un estrattore di dati per un comparatore italiano di offerte ${category === "energia" ? "luce/energia elettrica" : category}.
 
-COMPITO: Analizza i testi seguenti (presi da siti comparatori italiani) e estrai TUTTE le offerte ${category} che trovi.
+COMPITO: Analizza i testi e estrai le offerte ${category}.
 
 REGOLE CRITICHE:
-1. Restituisci SOLO un JSON array valido, niente altro. Niente markdown, niente backtick, niente commenti.
-2. Il campo "prezzo" deve essere il PREZZO UNITARIO (€/kWh per energia, €/Smc per gas, €/mese per internet), NON la stima annua.
-3. Se trovi lo stesso provider con più offerte, includi ogni offerta come riga separata.
-4. Se un dato non è chiaro, usa il valore più ragionevole. NON inventare offerte.
-5. Includi minimo 5 offerte, massimo 12. Privilegia le offerte più rilevanti e recenti.
+1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.
+2. Il campo "prezzo" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.
+3. NON duplicare: se la stessa offerta (stesso provider + stesso tipo fisso/variabile) appare su piu fonti, includila UNA sola volta.
+4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.
+5. Includi minimo 5, massimo 12 offerte. Privilegia offerte rilevanti e recenti.
 6. Ordina per prezzo crescente.
-7. NON includere offerte duplicate. Se la stessa offerta appare su più fonti, includila UNA sola volta.
-8. Per ogni offerta, includi il link diretto alla pagina dell'offerta sul sito del fornitore (es. https://www.sorgenia.it, https://www.edison.it). Se non conosci l'URL esatto, usa la homepage del fornitore.
+7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali se disponibili.
+8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).
 
-SCHEMA RICHIESTO:
+SCHEMA:
 ${schemas[category]}
 
-TESTI DA ANALIZZARE:
+TESTI:
 ${sourceBlock}
 
 JSON ARRAY:`;
@@ -161,49 +165,35 @@ JSON ARRAY:`;
     }),
   });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Claude API error ${res.status}: ${errText}`);
-  }
+  if (!res.ok) throw new Error(`Claude API error ${res.status}: ${await res.text()}`);
 
   const data = await res.json();
   const raw = data.content?.[0]?.text?.trim();
-
   if (!raw) throw new Error("Empty response from Claude");
 
-  // Clean potential markdown fences
   const cleaned = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim();
-
-  // Validate JSON
   const parsed = JSON.parse(cleaned);
-  if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new Error(`Invalid result for ${category}: not a non-empty array`);
-  }
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("Invalid result: not a non-empty array");
 
   return parsed;
 }
 
-// ─── Main handler ────────────────────────────────────────────────
 export default async function handler(req) {
-  console.log("🔄 Starting daily price update...");
+  console.log("\uD83D\uDD04 Starting daily price update...");
 
   const store = getStore("prices");
   const results = {};
   const errors = [];
 
   for (const [category, urls] of Object.entries(SOURCES)) {
-    console.log(`📥 Fetching ${category} from ${urls.length} sources...`);
+    console.log(`\uD83D\uDCE5 Fetching ${category} from ${urls.length} sources...`);
 
-    // Fetch all sources in parallel
     const textsWithSources = await Promise.all(
-      urls.map(async (url) => ({
-        url,
-        text: await fetchPageText(url),
-      }))
+      urls.map(async (url) => ({ url, text: await fetchPageText(url) }))
     );
 
     const validSources = textsWithSources.filter((s) => s.text);
-    console.log(`  ✅ ${validSources.length}/${urls.length} sources fetched`);
+    console.log(`  \u2705 ${validSources.length}/${urls.length} sources fetched`);
 
     if (validSources.length === 0) {
       errors.push(`${category}: all sources failed`);
@@ -212,50 +202,48 @@ export default async function handler(req) {
 
     try {
       const extracted = await extractWithClaude(category, textsWithSources);
-      // Deduplica per nome offerta
+
+      // Deduplicate by name + tipo + prezzo combination
       const seen = new Set();
-      results[category] = extracted.filter(o => { const k = o.name?.toLowerCase().trim(); if (seen.has(k)) return false; seen.add(k); return true; });
-      console.log(`  🧠 Claude extracted ${extracted.length} offers for ${category}`);
+      const deduped = extracted.filter((o) => {
+        const key = `${(o.name || "").toLowerCase().trim()}|${(o.tipo || "").toLowerCase().trim()}|${o.prezzo}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      // Add provider links
+      const withLinks = deduped.map((o) => ({
+        ...o,
+        link: guessProviderLink(o.name) || null,
+      }));
+
+      results[category] = withLinks;
+      console.log(`  \uD83E\uDDE0 Claude extracted ${extracted.length} -> deduped to ${withLinks.length} for ${category}`);
     } catch (err) {
       errors.push(`${category}: ${err.message}`);
-      console.error(`  ❌ ${category} extraction failed: ${err.message}`);
+      console.error(`  \u274C ${category} failed: ${err.message}`);
     }
   }
 
-  // Only save if we got at least one category
   if (Object.keys(results).length > 0) {
-    const payload = {
-      lastUpdated: new Date().toISOString(),
-      data: results,
-    };
-
+    const payload = { lastUpdated: new Date().toISOString(), data: results };
     await store.setJSON("latest", payload);
-    console.log(`💾 Saved to Netlify Blobs: ${JSON.stringify(Object.keys(results))}`);
-
-    // Also keep a dated backup
-    const dateKey = new Date().toISOString().split("T")[0]; // "2026-03-16"
+    const dateKey = new Date().toISOString().split("T")[0];
     await store.setJSON(`archive-${dateKey}`, payload);
+    console.log(`\uD83D\uDCBE Saved: ${JSON.stringify(Object.keys(results))}`);
   }
 
   const summary = {
     success: Object.keys(results).length > 0,
     categoriesUpdated: Object.keys(results),
-    offersCount: Object.fromEntries(
-      Object.entries(results).map(([k, v]) => [k, v.length])
-    ),
+    offersCount: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.length])),
     errors,
     timestamp: new Date().toISOString(),
   };
 
-  console.log("📊 Summary:", JSON.stringify(summary, null, 2));
-
-  return new Response(JSON.stringify(summary, null, 2), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  console.log("\uD83D\uDCCA Summary:", JSON.stringify(summary, null, 2));
+  return new Response(JSON.stringify(summary, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-// Netlify scheduled function config
-export const config = {
-  schedule: "0 6 * * *", // Every day at 06:00 UTC (08:00 Italy)
-};
+export const config = { schedule: "0 6 * * *" };
