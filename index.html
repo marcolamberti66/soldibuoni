@@ -857,11 +857,20 @@ function ProviderRow({ p, i, color, children }) {
     <div className="comparator-row" style={{
       background: "#fff", borderRadius: 12, padding: "16px 20px", marginBottom: 8,
       border: i === 0 ? "2px solid " + color : "1px solid #e2e8f0",
-      display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10,
+      display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10,
       animation: "slideUp 0.3s ease-out " + (i * 0.04) + "s both",
     }}>
-      {children}
-      {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: color, fontWeight: 700, textDecoration: "none", padding: "6px 14px", border: "2px solid " + color, borderRadius: 8, whiteSpace: "nowrap", transition: "all 0.2s" }} onMouseOver={e => { e.target.style.background = color; e.target.style.color = "#fff"; }} onMouseOut={e => { e.target.style.background = "transparent"; e.target.style.color = color; }}>Vai all'offerta →</a>}
+      <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "space-between", gap: 10, minWidth: 280 }}>
+        {children}
+      </div>
+      
+      <div style={{ width: 130, display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
+        {p.link ? (
+          <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: color, fontWeight: 700, textDecoration: "none", padding: "6px 14px", border: "2px solid " + color, borderRadius: 8, whiteSpace: "nowrap", transition: "all 0.2s" }} onMouseOver={e => { e.target.style.background = color; e.target.style.color = "#fff"; }} onMouseOut={e => { e.target.style.background = "transparent"; e.target.style.color = color; }}>Vai all'offerta →</a>
+        ) : (
+          <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic", padding: "6px 0" }}>Link non disp.</span>
+        )}
+      </div>
     </div>
   );
 }
