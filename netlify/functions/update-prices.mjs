@@ -36,6 +36,15 @@ const PROVIDER_LINKS = {
   "engie": "https://selectra.net/energia/fornitori/engie/offerte",
   "green network": "https://selectra.net/energia/fornitori/green-network/offerte",
   "vivi": "https://selectra.net/energia/fornitori/vivi-energia/offerte",
+  "argos": "https://selectra.net/energia/fornitori/argos/offerte",
+  "pulsee": "https://selectra.net/energia/fornitori/pulsee/offerte",
+  "iberdrola": "https://selectra.net/energia/fornitori/iberdrola/offerte",
+  "estra": "https://selectra.net/energia/fornitori/estra/offerte",
+  "tate": "https://selectra.net/energia/fornitori/tate/offerte",
+  "poste energia": "https://selectra.net/energia/fornitori/poste-italiane/offerte",
+  "poste italiane": "https://selectra.net/energia/fornitori/poste-italiane/offerte",
+  "segnoverde": "https://selectra.net/energia/fornitori/segnoverde",
+  "dolomiti": "https://selectra.net/energia/fornitori/dolomiti-energia/offerte",
   "fastweb": "https://selectra.net/internet/operatori/fastweb/casa",
   "iliad": "https://selectra.net/internet/operatori/iliad/casa",
   "tim": "https://selectra.net/internet/operatori/tim/casa",
@@ -46,6 +55,9 @@ const PROVIDER_LINKS = {
   "aruba": "https://selectra.net/internet/operatori/aruba-fibra/casa",
   "eolo": "https://selectra.net/internet/operatori/eolo/casa",
   "linkem": "https://selectra.net/internet/operatori/linkem/casa",
+  "poste casa": "https://selectra.net/internet/operatori/poste-italiane/casa",
+  "virgin fibra": "https://selectra.net/internet/operatori/virgin-fibra/casa",
+  "dimensione": "https://selectra.net/internet/operatori/dimensione/casa",
 };
 
 function guessProviderLink(name) {
@@ -113,7 +125,7 @@ async function extractWithClaude(category, textsWithSources) {
 
   var categoryLabel = category === "energia" ? "luce/energia elettrica" : category;
 
-  var prompt = "Sei un estrattore di dati per un comparatore italiano di offerte " + categoryLabel + ".\n\nCOMPITO: Analizza i testi e estrai le offerte " + categoryLabel + ".\n\nREGOLE CRITICHE:\n1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.\n2. Il campo \"prezzo\" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.\n3. NON duplicare: se la stessa offerta (stesso provider + stesso tipo fisso/variabile) appare su piu fonti, includila UNA sola volta.\n4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.\n5. Includi minimo 5, massimo 12 offerte. Privilegia offerte rilevanti e recenti.\n6. Ordina per prezzo crescente.\n7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali se disponibili.\n8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).\n\nSCHEMA:\n" + schemas[category] + "\n\nTESTI:\n" + sourceBlock + "\n\nJSON ARRAY:";
+ var prompt = "Sei un estrattore di dati per un comparatore italiano di offerte " + categoryLabel + ".\n\nCOMPITO: Analizza i testi e estrai le offerte " + categoryLabel + ".\n\nREGOLE CRITICHE:\n1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.\n2. Il campo \"prezzo\" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.\n3. NON duplicare: se la stessa offerta appare su piu fonti, includila UNA sola volta.\n4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.\n5. Includi minimo 8, massimo 18 offerte. ASSICURATI DI INCLUDERE, se presenti nel testo, anche operatori come Pulsee, Iberdrola, Argos, SegnoVerde, Poste, Estra, Dimensione o Virgin Fibra.\n6. Ordina per prezzo crescente.\n7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali.\n8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).\n\nSCHEMA:\n" + schemas[category] + "\n\nTESTI:\n" + sourceBlock + "\n\nJSON ARRAY:";
 
   var res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
