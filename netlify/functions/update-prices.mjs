@@ -18,39 +18,39 @@ const SOURCES = {
   ],
 };
 
-const PROVIDER_URLS = {
-  "edison": "https://www.edisonenergia.it/edison/casa",
-  "enel": "https://www.enel.it/it/luce-gas/offerte",
-  "eni plenitude": "https://eniplenitude.com/offerte-luce-e-gas",
-  "plenitude": "https://eniplenitude.com/offerte-luce-e-gas",
-  "sorgenia": "https://www.sorgenia.it/offerte-luce-e-gas",
-  "a2a": "https://www.a2aenergia.eu/offerte-luce-gas",
-  "iren": "https://iren.it/luce-gas-e-servizi/luce-e-gas/offerte-luce-e-gas",
-  "hera": "https://www.heracomm.it/casa/offerte",
-  "octopus": "https://octopusenergy.it/",
-  "e.on": "https://www.eon-energia.com/luce-e-gas.html",
-  "wekiwi": "https://www.wekiwi.it/offerta-luce-e-gas",
-  "illumia": "https://www.illumia.it/luce-gas/offerte/",
-  "acea": "https://www.aceaenergia.it/offerte-luce-gas/",
-  "nen": "https://nen.it/tariffe",
-  "engie": "https://www.engie.it/offerte-luce-gas",
-  "fastweb": "https://www.fastweb.it/internet/offerte-fibra/",
-  "iliad": "https://www.iliad.it/offerta-iliad-fibra.html",
-  "tim": "https://www.tim.it/fisso-e-mobile/fibra",
-  "vodafone": "https://www.vodafone.it/internet/offerte-internet-casa.html",
-  "windtre": "https://www.windtre.it/offerte-fibra/",
-  "sky": "https://www.sky.it/offerte/sky-wifi",
-  "tiscali": "https://casa.tiscali.it/",
-  "aruba": "https://fibra.aruba.it/",
-  "eolo": "https://www.eolo.it/home/offerte.html",
-  "linkem": "https://www.linkem.com/offerte-internet-casa",
-  "green network": "https://www.greennetworkenergy.it/",
-  "vivi": "https://www.vivienergia.it/",
+const PROVIDER_LINKS = {
+  "edison": "https://selectra.net/energia/fornitori/edison/offerte",
+  "enel": "https://selectra.net/energia/fornitori/enel/offerte",
+  "eni": "https://selectra.net/energia/fornitori/eni-plenitude/offerte",
+  "plenitude": "https://selectra.net/energia/fornitori/eni-plenitude/offerte",
+  "sorgenia": "https://selectra.net/energia/fornitori/sorgenia/offerte",
+  "a2a": "https://selectra.net/energia/fornitori/a2a/offerte",
+  "iren": "https://selectra.net/energia/fornitori/iren/offerte",
+  "hera": "https://selectra.net/energia/fornitori/hera/offerte",
+  "octopus": "https://selectra.net/energia/fornitori/octopus-energy/offerte",
+  "e.on": "https://selectra.net/energia/fornitori/eon/offerte",
+  "wekiwi": "https://selectra.net/energia/fornitori/wekiwi/offerte",
+  "illumia": "https://selectra.net/energia/fornitori/illumia/offerte",
+  "acea": "https://selectra.net/energia/fornitori/acea/offerte",
+  "nen": "https://selectra.net/energia/fornitori/nen/offerte",
+  "engie": "https://selectra.net/energia/fornitori/engie/offerte",
+  "green network": "https://selectra.net/energia/fornitori/green-network/offerte",
+  "vivi": "https://selectra.net/energia/fornitori/vivi-energia/offerte",
+  "fastweb": "https://selectra.net/internet/operatori/fastweb/casa",
+  "iliad": "https://selectra.net/internet/operatori/iliad/casa",
+  "tim": "https://selectra.net/internet/operatori/tim/casa",
+  "vodafone": "https://selectra.net/internet/operatori/vodafone/casa",
+  "windtre": "https://selectra.net/internet/operatori/windtre/casa",
+  "sky": "https://selectra.net/internet/operatori/sky/wifi",
+  "tiscali": "https://selectra.net/internet/operatori/tiscali/casa",
+  "aruba": "https://selectra.net/internet/operatori/aruba-fibra/casa",
+  "eolo": "https://selectra.net/internet/operatori/eolo/casa",
+  "linkem": "https://selectra.net/internet/operatori/linkem/casa",
 };
 
 function guessProviderLink(name) {
   const lower = (name || "").toLowerCase();
-  for (const [key, url] of Object.entries(PROVIDER_URLS)) {
+  for (const [key, url] of Object.entries(PROVIDER_LINKS)) {
     if (lower.includes(key)) return url;
   }
   return null;
@@ -69,7 +69,7 @@ async function fetchPageText(url) {
       },
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const html = await res.text();
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -87,7 +87,7 @@ async function fetchPageText(url) {
       .trim();
     return text.slice(0, 12000);
   } catch (err) {
-    console.error(`Failed to fetch ${url}: ${err.message}`);
+    console.error("Failed to fetch " + url + ": " + err.message);
     return null;
   }
 }
@@ -97,62 +97,25 @@ async function extractWithClaude(category, textsWithSources) {
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
   const schemas = {
-    energia: `Array of objects with EXACTLY these fields:
-  - name: string (provider name, e.g. "Edison", "Sorgenia", "Enel Energia". Use the COMPANY name, not the offer name)
-  - offerName: string (the specific offer name, e.g. "Web Luce", "Next Energy Sunlight", "Click Luce")
-  - tipo: string (MUST be exactly one of: "Fisso 12m", "Fisso 24m", "Variabile")
-  - prezzo: number (price in euro/kWh, e.g. 0.102. MUST be a decimal < 1, NOT the annual estimate. For variable offers use the spread value)
-  - fisso: number (monthly fixed cost in euro, e.g. 12.5. Use 0 if not mentioned)
-  - verde: boolean (true if 100% renewable/green energy)
-  - note: string (brief description, max 50 chars)`,
+    energia: "Array of objects with EXACTLY these fields:\n  - name: string (provider name, e.g. \"Edison\", \"Sorgenia\", \"Enel Energia\". Use the COMPANY name, not the offer name)\n  - offerName: string (the specific offer name, e.g. \"Web Luce\", \"Next Energy Sunlight\", \"Click Luce\")\n  - tipo: string (MUST be exactly one of: \"Fisso 12m\", \"Fisso 24m\", \"Variabile\")\n  - prezzo: number (price in euro/kWh, e.g. 0.102. MUST be a decimal < 1, NOT the annual estimate. For variable offers use the spread value)\n  - fisso: number (monthly fixed cost in euro, e.g. 12.5. Use 0 if not mentioned)\n  - verde: boolean (true if 100% renewable/green energy)\n  - note: string (brief description, max 50 chars)",
 
-    gas: `Array of objects with EXACTLY these fields:
-  - name: string (provider name, e.g. "Edison", "Sorgenia". Use the COMPANY name)
-  - offerName: string (the specific offer name, e.g. "Web Gas", "Next Energy Smart Gas")
-  - tipo: string (MUST be exactly one of: "Fisso 12m", "Fisso 24m", "Variabile")
-  - prezzo: number (price in euro/Smc, e.g. 0.42. MUST be a decimal, NOT annual estimate)
-  - fisso: number (monthly fixed cost in euro. Use 0 if not mentioned)
-  - note: string (brief description, max 50 chars)`,
+    gas: "Array of objects with EXACTLY these fields:\n  - name: string (provider name, e.g. \"Edison\", \"Sorgenia\". Use the COMPANY name)\n  - offerName: string (the specific offer name, e.g. \"Web Gas\", \"Next Energy Smart Gas\")\n  - tipo: string (MUST be exactly one of: \"Fisso 12m\", \"Fisso 24m\", \"Variabile\")\n  - prezzo: number (price in euro/Smc, e.g. 0.42. MUST be a decimal, NOT annual estimate)\n  - fisso: number (monthly fixed cost in euro. Use 0 if not mentioned)\n  - note: string (brief description, max 50 chars)",
 
-    internet: `Array of objects with EXACTLY these fields:
-  - name: string (provider + offer name, e.g. "Iliad Fibra", "Fastweb Casa Light")
-  - tipo: string ("FTTH" | "FTTC" | "FWA")
-  - prezzo: number (monthly price in euro, e.g. 19.99)
-  - velocita: string (download speed, e.g. "2.5 Gbps", "1 Gbps". Use Gbps where >= 1000 Mbps)
-  - vincolo: string ("No" | "24 mesi" | "18 mesi" | "12 mesi" | "6 mesi" | "36 mesi")
-  - note: string (brief description, max 50 chars)`,
+    internet: "Array of objects with EXACTLY these fields:\n  - name: string (provider + offer name, e.g. \"Iliad Fibra\", \"Fastweb Casa Light\")\n  - tipo: string (\"FTTH\" | \"FTTC\" | \"FWA\")\n  - prezzo: number (monthly price in euro, e.g. 19.99)\n  - velocita: string (download speed, e.g. \"2.5 Gbps\", \"1 Gbps\". Use Gbps where >= 1000 Mbps)\n  - vincolo: string (\"No\" | \"24 mesi\" | \"18 mesi\" | \"12 mesi\" | \"6 mesi\" | \"36 mesi\")\n  - note: string (brief description, max 50 chars)",
   };
 
-  const sourceBlock = textsWithSources
-    .filter((s) => s.text)
-    .map((s, i) => `--- SOURCE ${i + 1}: ${s.url} ---\n${s.text}`)
+  var sourceBlock = textsWithSources
+    .filter(function (s) { return s.text; })
+    .map(function (s, i) { return "--- SOURCE " + (i + 1) + ": " + s.url + " ---\n" + s.text; })
     .join("\n\n");
 
   if (!sourceBlock.trim()) return null;
 
-  const prompt = `Sei un estrattore di dati per un comparatore italiano di offerte ${category === "energia" ? "luce/energia elettrica" : category}.
+  var categoryLabel = category === "energia" ? "luce/energia elettrica" : category;
 
-COMPITO: Analizza i testi e estrai le offerte ${category}.
+  var prompt = "Sei un estrattore di dati per un comparatore italiano di offerte " + categoryLabel + ".\n\nCOMPITO: Analizza i testi e estrai le offerte " + categoryLabel + ".\n\nREGOLE CRITICHE:\n1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.\n2. Il campo \"prezzo\" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.\n3. NON duplicare: se la stessa offerta (stesso provider + stesso tipo fisso/variabile) appare su piu fonti, includila UNA sola volta.\n4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.\n5. Includi minimo 5, massimo 12 offerte. Privilegia offerte rilevanti e recenti.\n6. Ordina per prezzo crescente.\n7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali se disponibili.\n8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).\n\nSCHEMA:\n" + schemas[category] + "\n\nTESTI:\n" + sourceBlock + "\n\nJSON ARRAY:";
 
-REGOLE CRITICHE:
-1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.
-2. Il campo "prezzo" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.
-3. NON duplicare: se la stessa offerta (stesso provider + stesso tipo fisso/variabile) appare su piu fonti, includila UNA sola volta.
-4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.
-5. Includi minimo 5, massimo 12 offerte. Privilegia offerte rilevanti e recenti.
-6. Ordina per prezzo crescente.
-7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali se disponibili.
-8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).
-
-SCHEMA:
-${schemas[category]}
-
-TESTI:
-${sourceBlock}
-
-JSON ARRAY:`;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  var res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -167,85 +130,87 @@ JSON ARRAY:`;
     }),
   });
 
-  if (!res.ok) throw new Error(`Claude API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error("Claude API error " + res.status + ": " + (await res.text()));
 
-  const data = await res.json();
-  const raw = data.content?.[0]?.text?.trim();
+  var data = await res.json();
+  var raw = data.content && data.content[0] && data.content[0].text ? data.content[0].text.trim() : "";
   if (!raw) throw new Error("Empty response from Claude");
 
-  const cleaned = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim();
-  const parsed = JSON.parse(cleaned);
+  var cleaned = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim();
+  var parsed = JSON.parse(cleaned);
   if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("Invalid result: not a non-empty array");
 
   return parsed;
 }
 
 export default async function handler(req) {
-  console.log("\uD83D\uDD04 Starting daily price update...");
+  console.log("Starting daily price update...");
 
-  const store = getStore("prices");
-  const results = {};
-  const errors = [];
+  var store = getStore("prices");
+  var results = {};
+  var errors = [];
 
-  for (const [category, urls] of Object.entries(SOURCES)) {
-    console.log(`\uD83D\uDCE5 Fetching ${category} from ${urls.length} sources...`);
+  for (var _i = 0, _a = Object.entries(SOURCES); _i < _a.length; _i++) {
+    var category = _a[_i][0];
+    var urls = _a[_i][1];
 
-    const textsWithSources = await Promise.all(
-      urls.map(async (url) => ({ url, text: await fetchPageText(url) }))
+    console.log("Fetching " + category + " from " + urls.length + " sources...");
+
+    var textsWithSources = await Promise.all(
+      urls.map(async function (url) { return { url: url, text: await fetchPageText(url) }; })
     );
 
-    const validSources = textsWithSources.filter((s) => s.text);
-    console.log(`  \u2705 ${validSources.length}/${urls.length} sources fetched`);
+    var validSources = textsWithSources.filter(function (s) { return s.text; });
+    console.log("  " + validSources.length + "/" + urls.length + " sources fetched");
 
     if (validSources.length === 0) {
-      errors.push(`${category}: all sources failed`);
+      errors.push(category + ": all sources failed");
       continue;
     }
 
     try {
-      const extracted = await extractWithClaude(category, textsWithSources);
+      var extracted = await extractWithClaude(category, textsWithSources);
 
-      // Deduplicate by name + tipo + prezzo combination
-      const seen = new Set();
-      const deduped = extracted.filter((o) => {
-        const key = `${(o.name || "").toLowerCase().trim()}|${(o.tipo || "").toLowerCase().trim()}|${o.prezzo}`;
+      // Deduplicate by name + tipo + prezzo
+      var seen = new Set();
+      var deduped = extracted.filter(function (o) {
+        var key = (o.name || "").toLowerCase().trim() + "|" + (o.tipo || "").toLowerCase().trim() + "|" + o.prezzo;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
 
       // Add provider links
-      const withLinks = deduped.map((o) => ({
-        ...o,
-        link: guessProviderLink(o.name) || null,
-      }));
+      var withLinks = deduped.map(function (o) {
+        return Object.assign({}, o, { link: guessProviderLink(o.name) || null });
+      });
 
       results[category] = withLinks;
-      console.log(`  \uD83E\uDDE0 Claude extracted ${extracted.length} -> deduped to ${withLinks.length} for ${category}`);
+      console.log("  Claude extracted " + extracted.length + " -> deduped to " + withLinks.length + " for " + category);
     } catch (err) {
-      errors.push(`${category}: ${err.message}`);
-      console.error(`  \u274C ${category} failed: ${err.message}`);
+      errors.push(category + ": " + err.message);
+      console.error("  " + category + " failed: " + err.message);
     }
   }
 
   if (Object.keys(results).length > 0) {
-    const payload = { lastUpdated: new Date().toISOString(), data: results };
+    var payload = { lastUpdated: new Date().toISOString(), data: results };
     await store.setJSON("latest", payload);
-    const dateKey = new Date().toISOString().split("T")[0];
-    await store.setJSON(`archive-${dateKey}`, payload);
-    console.log(`\uD83D\uDCBE Saved: ${JSON.stringify(Object.keys(results))}`);
+    var dateKey = new Date().toISOString().split("T")[0];
+    await store.setJSON("archive-" + dateKey, payload);
+    console.log("Saved: " + JSON.stringify(Object.keys(results)));
   }
 
-  const summary = {
+  var summary = {
     success: Object.keys(results).length > 0,
     categoriesUpdated: Object.keys(results),
-    offersCount: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.length])),
-    errors,
+    offersCount: Object.fromEntries(Object.entries(results).map(function (e) { return [e[0], e[1].length]; })),
+    errors: errors,
     timestamp: new Date().toISOString(),
   };
 
-  console.log("\uD83D\uDCCA Summary:", JSON.stringify(summary, null, 2));
+  console.log("Summary: " + JSON.stringify(summary, null, 2));
   return new Response(JSON.stringify(summary, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-export const config = { schedule: "0 6 * * *" };
+export var config = { schedule: "0 6 * * *" };
