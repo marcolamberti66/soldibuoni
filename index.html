@@ -118,16 +118,27 @@ async function loadDynamicPrices() {
     const timeout = setTimeout(() => controller.abort(), 4000);
     const res = await fetch("/.netlify/functions/get-prices", { signal: controller.signal });
     clearTimeout(timeout);
+    
     if (!res.ok) return false;
     const payload = await res.json();
-    if (payload?.data?.energia?.length > 0) { ENERGY_PROVIDERS = payload.data.energia; PRICES_SOURCE = "live"; }
-    if (payload?.data?.gas?.length > 0) { GAS_PROVIDERS = payload.data.gas; PRICES_SOURCE = "live"; }
-    if (payload?.data?.internet?.length > 0) { INTERNET_PROVIDERS = payload.data.internet; PRICES_SOURCE = "live"; }
+    
+    // Funzione di validazione rigorosa: accetta solo oggetti con un prezzo numerico valido
+    const validateData = (arr) => Array.isArray(arr) ? arr.filter(p => typeof p.prezzo === 'number' && !isNaN(p.prezzo)) : [];
+
+    const validEnergia = validateData(payload?.data?.energia);
+    const validGas = validateData(payload?.data?.gas);
+    const validInternet = validateData(payload?.data?.internet);
+
+    // Sovrascrive solo se ci sono almeno 3 offerte valide e sicure
+    if (validEnergia.length >= 3) { ENERGY_PROVIDERS = validEnergia; PRICES_SOURCE = "live"; }
+    if (validGas.length >= 3) { GAS_PROVIDERS = validGas; PRICES_SOURCE = "live"; }
+    if (validInternet.length >= 3) { INTERNET_PROVIDERS = validInternet; PRICES_SOURCE = "live"; }
+    
     if (payload?.lastUpdated) { PRICES_LAST_UPDATED = new Date(payload.lastUpdated); }
-    console.log("✅ Prezzi live caricati:", PRICES_SOURCE);
+    console.log("✅ Prezzi live caricati e validati:", PRICES_SOURCE);
     return true;
   } catch (err) {
-    console.warn("⚠️ Prezzi dinamici non disponibili, uso fallback hardcoded");
+    console.warn("⚠️ Prezzi dinamici non validi o irraggiungibili, uso fallback hardcoded");
     return false;
   }
 }
