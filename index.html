@@ -850,6 +850,7 @@ function ProviderRow({ p, i, color, children }) {
       animation: "slideUp 0.3s ease-out " + (i * 0.04) + "s both",
     }}>
       {children}
+      {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: color, fontWeight: 600, textDecoration: "none", padding: "6px 14px", border: "1px solid " + color, borderRadius: 8, whiteSpace: "nowrap" }}>Vai all'offerta →</a>}
     </div>
   );
 }
