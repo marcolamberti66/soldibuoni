@@ -850,7 +850,7 @@ function ProviderRow({ p, i, color, children }) {
       animation: "slideUp 0.3s ease-out " + (i * 0.04) + "s both",
     }}>
       {children}
-      {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: color, fontWeight: 600, textDecoration: "none", padding: "6px 14px", border: "1px solid " + color, borderRadius: 8, whiteSpace: "nowrap" }}>Vai all'offerta →</a>}
+      {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: color, fontWeight: 700, textDecoration: "none", padding: "6px 14px", border: "2px solid " + color, borderRadius: 8, whiteSpace: "nowrap", transition: "all 0.2s" }} onMouseOver={e => { e.target.style.background = color; e.target.style.color = "#fff"; }} onMouseOut={e => { e.target.style.background = "transparent"; e.target.style.color = color; }}>Vai all'offerta →</a>}
     </div>
   );
 }
@@ -861,11 +861,14 @@ function Badge({ text, color }) {
 
 function EnergiaComp({ color }) {
   const [consumo, setConsumo] = useState(2700);
+  const [filtroTipo, setFiltroTipo] = useState("tutti");
   const [sort, setSort] = useState("costo");
   const sorted = useMemo(() => {
-    const w = ENERGY_PROVIDERS.map(p => ({...p, costoAnnuo: (p.prezzo * consumo) + (p.fisso * 12)}));
+    let w = ENERGY_PROVIDERS.map(p => ({...p, costoAnnuo: (p.prezzo * consumo) + (p.fisso * 12)}));
+    if (filtroTipo === "fisso") w = w.filter(p => p.tipo && p.tipo.toLowerCase().startsWith("fisso"));
+    if (filtroTipo === "variabile") w = w.filter(p => p.tipo && p.tipo.toLowerCase().startsWith("variabil"));
     return sort === "costo" ? w.sort((a,b) => a.costoAnnuo - b.costoAnnuo) : w.sort((a,b) => a.prezzo - b.prezzo);
-  }, [consumo, sort]);
+  }, [consumo, sort, filtroTipo]);
   return (
     <div>
       <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, color: "#0f172a", marginBottom: 18 }}>Comparatore Tariffe Energia</h2>
@@ -874,20 +877,26 @@ function EnergiaComp({ color }) {
         <input type="range" min={1000} max={6000} step={100} value={consumo} onChange={e => setConsumo(+e.target.value)} style={{ width: "100%", accentColor: color }} />
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8" }}><span>1.000</span><span>6.000 kWh</span></div>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {[["costo","Costo annuo"],["prezzo","Prezzo kWh"]].map(([v,l]) => (
-          <button key={v} onClick={() => setSort(v)} style={{ padding: "8px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 600, background: sort===v ? color : "#f1f5f9", color: sort===v ? "#fff" : "#64748b", cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        {[["tutti","Tutte"],["fisso","Prezzo Fisso"],["variabile","Prezzo Variabile"]].map(([v,l]) => (
+          <button key={v} onClick={() => setFiltroTipo(v)} style={{ padding: "8px 16px", borderRadius: 8, border: filtroTipo===v ? "none" : "1px solid #e2e8f0", fontSize: 13, fontWeight: 600, background: filtroTipo===v ? color : "#fff", color: filtroTipo===v ? "#fff" : "#64748b", cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
         ))}
       </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[["costo","Costo annuo"],["prezzo","Prezzo kWh"]].map(([v,l]) => (
+          <button key={v} onClick={() => setSort(v)} style={{ padding: "6px 12px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, background: sort===v ? "#0f172a" : "#f1f5f9", color: sort===v ? "#fff" : "#94a3b8", cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+      {sorted.length === 0 && <p style={{ textAlign: "center", color: "#94a3b8", padding: 40 }}>Nessuna offerta trovata per questo filtro.</p>}
       {sorted.map((p, i) => (
-        <ProviderRow key={p.name} p={p} i={i} color={color}>
+        <ProviderRow key={(p.name||"")+p.tipo+p.prezzo} p={p} i={i} color={color}>
           <div style={{ minWidth: 160 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontWeight: 700, color: "#0f172a", fontSize: 15 }}>{p.name}</span>
               {i === 0 && <Badge text="BEST" color={color} />}
               {p.verde && <span style={{ fontSize: 11, color: "#059669" }}>🌿 Green</span>}
             </div>
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>{p.tipo} — {p.note}</span>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>{p.tipo}{p.offerName ? " — " + p.offerName : (p.note ? " — " + p.note : "")}</span>
           </div>
           <div className="comparator-stats" style={{ display: "flex", gap: 20, alignItems: "center" }}>
             <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#94a3b8" }}>€/kWh</div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{p.prezzo.toFixed(3)}</div></div>
@@ -896,14 +905,25 @@ function EnergiaComp({ color }) {
           </div>
         </ProviderRow>
       ))}
-      <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 14, fontStyle: "italic" }}>* Stime basate sul consumo indicato. Dati indicativi, marzo 2026.</p>
+      <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 14, fontStyle: "italic" }}>
+        * Stime basate sul consumo indicato.
+        {PRICES_LAST_UPDATED
+          ? " Prezzi aggiornati il " + PRICES_LAST_UPDATED.toLocaleDateString("it-IT") + "."
+          : " Dati indicativi, marzo 2026."}
+        {PRICES_SOURCE === "live" && <span style={{ color: "#059669", marginLeft: 6 }}>● Live</span>}
+      </p>
     </div>
   );
 }
-
 function GasComp({ color }) {
   const [consumo, setConsumo] = useState(1000);
-  const sorted = useMemo(() => GAS_PROVIDERS.map(p => ({...p, costoAnnuo: (p.prezzo * consumo) + (p.fisso * 12)})).sort((a,b) => a.costoAnnuo - b.costoAnnuo), [consumo]);
+  const [filtroTipo, setFiltroTipo] = useState("tutti");
+  const sorted = useMemo(() => {
+    let w = GAS_PROVIDERS.map(p => ({...p, costoAnnuo: (p.prezzo * consumo) + (p.fisso * 12)}));
+    if (filtroTipo === "fisso") w = w.filter(p => p.tipo && p.tipo.toLowerCase().startsWith("fisso"));
+    if (filtroTipo === "variabile") w = w.filter(p => p.tipo && p.tipo.toLowerCase().startsWith("variabil"));
+    return w.sort((a,b) => a.costoAnnuo - b.costoAnnuo);
+  }, [consumo, filtroTipo]);
   return (
     <div>
       <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, color: "#0f172a", marginBottom: 18 }}>Comparatore Tariffe Gas</h2>
@@ -912,11 +932,17 @@ function GasComp({ color }) {
         <input type="range" min={200} max={2500} step={50} value={consumo} onChange={e => setConsumo(+e.target.value)} style={{ width: "100%", accentColor: color }} />
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8" }}><span>200</span><span>2.500 Smc</span></div>
       </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {[["tutti","Tutte"],["fisso","Prezzo Fisso"],["variabile","Prezzo Variabile"]].map(([v,l]) => (
+          <button key={v} onClick={() => setFiltroTipo(v)} style={{ padding: "8px 16px", borderRadius: 8, border: filtroTipo===v ? "none" : "1px solid #e2e8f0", fontSize: 13, fontWeight: 600, background: filtroTipo===v ? color : "#fff", color: filtroTipo===v ? "#fff" : "#64748b", cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+      {sorted.length === 0 && <p style={{ textAlign: "center", color: "#94a3b8", padding: 40 }}>Nessuna offerta trovata per questo filtro.</p>}
       {sorted.map((p, i) => (
-        <ProviderRow key={p.name} p={p} i={i} color={color}>
+        <ProviderRow key={(p.name||"")+p.tipo+p.prezzo} p={p} i={i} color={color}>
           <div style={{ minWidth: 160 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 700, color: "#0f172a", fontSize: 15 }}>{p.name}</span>{i === 0 && <Badge text="BEST" color={color} />}</div>
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>{p.tipo} — {p.note}</span>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>{p.tipo}{p.offerName ? " — " + p.offerName : (p.note ? " — " + p.note : "")}</span>
           </div>
           <div className="comparator-stats" style={{ display: "flex", gap: 20, alignItems: "center" }}>
             <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#94a3b8" }}>€/Smc</div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{p.prezzo.toFixed(2)}</div></div>
@@ -925,15 +951,32 @@ function GasComp({ color }) {
           </div>
         </ProviderRow>
       ))}
+      <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 14, fontStyle: "italic" }}>
+        * Stime basate sul consumo indicato.
+        {PRICES_LAST_UPDATED
+          ? " Prezzi aggiornati il " + PRICES_LAST_UPDATED.toLocaleDateString("it-IT") + "."
+          : " Dati indicativi, marzo 2026."}
+        {PRICES_SOURCE === "live" && <span style={{ color: "#059669", marginLeft: 6 }}>● Live</span>}
+      </p>
     </div>
   );
 }
-
 function InternetComp({ color }) {
-  const sorted = useMemo(() => [...INTERNET_PROVIDERS].sort((a,b) => a.prezzo - b.prezzo), []);
+  const [filtroTipo, setFiltroTipo] = useState("tutti");
+  const sorted = useMemo(() => {
+    let w = [...INTERNET_PROVIDERS];
+    if (filtroTipo !== "tutti") w = w.filter(p => p.tipo === filtroTipo);
+    return w.sort((a,b) => a.prezzo - b.prezzo);
+  }, [filtroTipo]);
   return (
     <div>
       <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, color: "#0f172a", marginBottom: 18 }}>Comparatore Offerte Internet</h2>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {[["tutti","Tutte"],["FTTH","Fibra FTTH"],["FWA","FWA Wireless"]].map(([v,l]) => (
+          <button key={v} onClick={() => setFiltroTipo(v)} style={{ padding: "8px 16px", borderRadius: 8, border: filtroTipo===v ? "none" : "1px solid #e2e8f0", fontSize: 13, fontWeight: 600, background: filtroTipo===v ? color : "#fff", color: filtroTipo===v ? "#fff" : "#64748b", cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+      {sorted.length === 0 && <p style={{ textAlign: "center", color: "#94a3b8", padding: 40 }}>Nessuna offerta trovata per questo filtro.</p>}
       {sorted.map((p, i) => (
         <ProviderRow key={p.name} p={p} i={i} color={color}>
           <div style={{ minWidth: 180 }}>
@@ -947,6 +990,12 @@ function InternetComp({ color }) {
           </div>
         </ProviderRow>
       ))}
+      <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 14, fontStyle: "italic" }}>
+        {PRICES_LAST_UPDATED
+          ? "Prezzi aggiornati il " + PRICES_LAST_UPDATED.toLocaleDateString("it-IT") + "."
+          : "Dati indicativi, marzo 2026."}
+        {PRICES_SOURCE === "live" && <span style={{ color: "#059669", marginLeft: 6 }}>● Live</span>}
+      </p>
     </div>
   );
 }
