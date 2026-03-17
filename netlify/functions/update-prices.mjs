@@ -23,7 +23,7 @@ const PROVIDER_LINKS = {
   "enel": "https://selectra.net/energia/fornitori/enel/offerte",
   "eni": "https://selectra.net/energia/fornitori/eni-plenitude/offerte",
   "plenitude": "https://selectra.net/energia/fornitori/eni-plenitude/offerte",
-  "sorgenia": "https://selectra.net/energia/fornitori/sorgenia/offerte",
+  "sorgenia": "https://selectra.net/energia/fornitori/sorgenia",
   "a2a": "https://selectra.net/energia/fornitori/a2a/offerte",
   "iren": "https://selectra.net/energia/fornitori/iren/offerte",
   "hera": "https://selectra.net/energia/fornitori/hera/offerte",
