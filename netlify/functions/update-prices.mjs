@@ -93,6 +93,7 @@ async function extractWithClaude(category, textsWithSources) {
   - fisso: number (monthly fixed cost in €, e.g. 12.5. Use 0 if not mentioned)
   - verde: boolean (true if 100% renewable/green energy)
   - note: string (brief description, max 60 chars)`,
+  - link: string (URL to the provider's offer page, e.g. "https://www.edison.it/offerte/luce")
 
     gas: `Array of objects with EXACTLY these fields:
   - name: string (provider name)
@@ -100,6 +101,7 @@ async function extractWithClaude(category, textsWithSources) {
   - prezzo: number (price in €/Smc, e.g. 0.42. MUST be a decimal number, NOT annual estimate)
   - fisso: number (monthly fixed cost in €. Use 0 if not mentioned)
   - note: string (brief description, max 60 chars)`,
+  - link: string (URL to the provider's offer page)
 
     internet: `Array of objects with EXACTLY these fields:
   - name: string (offer name including provider, e.g. "Iliad Fibra")
@@ -108,6 +110,7 @@ async function extractWithClaude(category, textsWithSources) {
   - velocita: string (e.g. "2.5 Gbps", "1 Gbps")
   - vincolo: string ("No" | "24 mesi" | "18 mesi" etc.)
   - note: string (brief description, max 60 chars)`,
+  - link: string (URL to the provider's offer page)
   };
 
   // Build the source texts block
@@ -132,6 +135,8 @@ REGOLE CRITICHE:
 4. Se un dato non è chiaro, usa il valore più ragionevole. NON inventare offerte.
 5. Includi minimo 5 offerte, massimo 12. Privilegia le offerte più rilevanti e recenti.
 6. Ordina per prezzo crescente.
+7. NON includere offerte duplicate. Se la stessa offerta appare su più fonti, includila UNA sola volta.
+8. Per ogni offerta, includi il link diretto alla pagina dell'offerta sul sito del fornitore (es. https://www.sorgenia.it, https://www.edison.it). Se non conosci l'URL esatto, usa la homepage del fornitore.
 
 SCHEMA RICHIESTO:
 ${schemas[category]}
@@ -207,7 +212,9 @@ export default async function handler(req) {
 
     try {
       const extracted = await extractWithClaude(category, textsWithSources);
-      results[category] = extracted;
+      // Deduplica per nome offerta
+      const seen = new Set();
+      results[category] = extracted.filter(o => { const k = o.name?.toLowerCase().trim(); if (seen.has(k)) return false; seen.add(k); return true; });
       console.log(`  🧠 Claude extracted ${extracted.length} offers for ${category}`);
     } catch (err) {
       errors.push(`${category}: ${err.message}`);
