@@ -4,9 +4,9 @@ export default async function handler(req) {
   const headers = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+    // Riduciamo drasticamente la cache a 60 secondi per permettere aggiornamenti quasi in real-time
+    "Cache-Control": "public, max-age=60, s-maxage=60",
   };
-
   try {
     const store = getStore("prices");
     const raw = await store.get("latest");
