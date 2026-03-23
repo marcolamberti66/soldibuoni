@@ -16,6 +16,10 @@ const SOURCES = {
     "https://selectra.net/internet/guida/offerte/wifi-casa",
     "https://selectra.net/internet/score",
   ],
+  universita: [
+    "https://www.studenti.it/tasse-universitarie.html",
+    "https://www.skuola.net/universita/info-utili/tasse-universitarie/",
+  ],
 };
 
 const PROVIDER_LINKS = {
@@ -114,6 +118,8 @@ async function extractWithClaude(category, textsWithSources) {
     gas: "Array of objects with EXACTLY these fields:\n  - name: string (provider name, e.g. \"Edison\", \"Sorgenia\". Use the COMPANY name)\n  - offerName: string (the specific offer name, e.g. \"Web Gas\", \"Next Energy Smart Gas\")\n  - tipo: string (MUST be exactly one of: \"Fisso 12m\", \"Fisso 24m\", \"Variabile\")\n  - prezzo: number (price in euro/Smc, e.g. 0.42. MUST be a decimal, NOT annual estimate)\n  - fisso: number (monthly fixed cost in euro. Use 0 if not mentioned)\n  - note: string (brief description, max 50 chars)",
 
     internet: "Array of objects with EXACTLY these fields:\n  - name: string (provider + offer name, e.g. \"Iliad Fibra\", \"Fastweb Casa Light\")\n  - tipo: string (\"FTTH\" | \"FTTC\" | \"FWA\")\n  - prezzo: number (monthly price in euro, e.g. 19.99)\n  - velocita: string (download speed, e.g. \"2.5 Gbps\", \"1 Gbps\". Use Gbps where >= 1000 Mbps)\n  - vincolo: string (\"No\" | \"24 mesi\" | \"18 mesi\" | \"12 mesi\" | \"6 mesi\" | \"36 mesi\")\n  - note: string (brief description, max 50 chars)",
+
+    universita: "Array of objects with EXACTLY these fields:\n  - facolta: string (faculty name, e.g. \"Economia\", \"Ingegneria\", \"Medicina\")\n  - uni: string (university name, e.g. \"Politecnico Milano\", \"La Sapienza\")\n  - citta: string (city name, e.g. \"Milano\", \"Roma\")\n  - min: number (minimum tuition fee in euro for lowest ISEE bracket, e.g. 156)\n  - med: number (medium tuition fee in euro for average ISEE, e.g. 1200)\n  - max: number (maximum tuition fee in euro for highest ISEE bracket, e.g. 3800)\n  - tipo: string (\"Pubblica\" | \"Privata\")",
   };
 
   var sourceBlock = textsWithSources
@@ -123,7 +129,7 @@ async function extractWithClaude(category, textsWithSources) {
 
   if (!sourceBlock.trim()) return null;
 
-  var categoryLabel = category === "energia" ? "luce/energia elettrica" : category;
+  var categoryLabel = category === "energia" ? "luce/energia elettrica" : category === "universita" ? "tasse universitarie italiane A.A. 2025/2026" : category;
 
  var prompt = "Sei un estrattore di dati per un comparatore italiano di offerte " + categoryLabel + ".\n\nCOMPITO: Analizza i testi e estrai le offerte " + categoryLabel + ".\n\nREGOLE CRITICHE:\n1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.\n2. Il campo \"prezzo\" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.\n3. NON duplicare: se la stessa offerta appare su piu fonti, includila UNA sola volta.\n4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.\n5. Includi minimo 8, massimo 18 offerte. ASSICURATI DI INCLUDERE, se presenti nel testo, anche operatori come Pulsee, Iberdrola, Argos, SegnoVerde, Poste, Estra, Dimensione o Virgin Fibra.\n6. Ordina per prezzo crescente.\n7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali.\n8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).\n\nSCHEMA:\n" + schemas[category] + "\n\nTESTI:\n" + sourceBlock + "\n\nJSON ARRAY:";
 
@@ -186,19 +192,30 @@ export default async function handler(req) {
       // Deduplicate by name + tipo + prezzo
       var seen = new Set();
       var deduped = extracted.filter(function (o) {
-        var key = (o.name || "").toLowerCase().trim() + "|" + (o.tipo || "").toLowerCase().trim() + "|" + o.prezzo;
+        var key = (o.name || o.uni || "").toLowerCase().trim() + "|" + (o.tipo || "").toLowerCase().trim() + "|" + (o.prezzo || o.med || 0);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
 
-      // Add provider links
-      var withLinks = deduped.map(function (o) {
-        return Object.assign({}, o, { link: guessProviderLink(o.name) || null });
-      });
+      // Per università: raggruppa per facoltà
+      if (category === "universita") {
+        var grouped = {};
+        deduped.forEach(function (o) {
+          var fac = o.facolta || "Altro";
+          if (!grouped[fac]) grouped[fac] = [];
+          grouped[fac].push({ uni: o.uni, citta: o.citta, min: o.min, med: o.med, max: o.max, tipo: o.tipo });
+        });
+        results[category] = grouped;
+      } else {
+        // Add provider links (solo per energia, gas, internet)
+        var withLinks = deduped.map(function (o) {
+          return Object.assign({}, o, { link: guessProviderLink(o.name) || null });
+        });
+        results[category] = withLinks;
+      }
 
-      results[category] = withLinks;
-      console.log("  Claude extracted " + extracted.length + " -> deduped to " + withLinks.length + " for " + category);
+      console.log("  Claude extracted " + extracted.length + " -> deduped to " + deduped.length + " for " + category);
     } catch (err) {
       errors.push(category + ": " + err.message);
       console.error("  " + category + " failed: " + err.message);
@@ -216,7 +233,10 @@ export default async function handler(req) {
   var summary = {
     success: Object.keys(results).length > 0,
     categoriesUpdated: Object.keys(results),
-    offersCount: Object.fromEntries(Object.entries(results).map(function (e) { return [e[0], e[1].length]; })),
+    offersCount: Object.fromEntries(Object.entries(results).map(function (e) {
+      var count = Array.isArray(e[1]) ? e[1].length : Object.keys(e[1]).length + " facolta";
+      return [e[0], count];
+    })),
     errors: errors,
     timestamp: new Date().toISOString(),
   };
