@@ -16,7 +16,7 @@ const SOURCES = {
     "https://selectra.net/internet/guida/offerte/wifi-casa",
     "https://selectra.net/internet/score",
   ],
-  // Università: nessuna fonte statica — Claude usa web_search autonomamente
+  // Università: Claude compila la tabella usando le sue conoscenze aggiornate
   universita: [],
 };
 
@@ -107,65 +107,56 @@ async function fetchPageText(url) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// UNIVERSITÀ: Claude usa web_search per ricercare autonomamente
-// le rette sui siti ufficiali degli atenei italiani.
-// Niente scraping manuale — Claude naviga il web da solo.
+// UNIVERSITÀ: Claude compila la tabella rette A.A. 2025/2026
+// usando le sue conoscenze. Le rette cambiano 1 volta/anno,
+// quindi i dati di training di Claude sono affidabili.
 // ─────────────────────────────────────────────────────────────
-async function extractUniversitaWithResearch() {
+async function extractUniversitaWithKnowledge() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
-  var prompt = `Sei un ricercatore specializzato in costi universitari italiani.
-Devi compilare una tabella delle rette universitarie A.A. 2025/2026.
+  var prompt = `Compila una tabella delle rette universitarie italiane A.A. 2025/2026.
 
-USA LA RICERCA WEB per trovare i dati aggiornati sui siti ufficiali delle universita.
-Cerca le pagine "contribuzione studentesca" o "tasse e contributi" di ogni ateneo.
+DEVI restituire dati per ESATTAMENTE queste 10 facolta (usa questi nomi IDENTICI come valore del campo "facolta"):
+Economia, Giurisprudenza, Ingegneria, Medicina, Architettura, Scienze Politiche, Lettere e Filosofia, Psicologia, Informatica, Scienze della Comunicazione
 
-DEVI restituire dati per ESATTAMENTE queste 10 facolta (usa questi nomi IDENTICI):
-- Economia
-- Giurisprudenza
-- Ingegneria
-- Medicina
-- Architettura
-- Scienze Politiche
-- Lettere e Filosofia
-- Psicologia
-- Informatica
-- Scienze della Comunicazione
+Per OGNI facolta includi 5-7 universita scelte SOLO tra queste (includi solo quelle che offrono realmente quella facolta):
 
-Per ogni facolta, includi 5-7 universita scelte tra queste:
 PRIVATE: Bocconi (Milano), LUISS (Roma), Cattolica (Milano), IULM (Milano), San Raffaele (Milano), Humanitas (Milano), Campus Bio-Medico (Roma)
 PUBBLICHE: Statale Milano, La Sapienza (Roma), Bologna, Padova, Politecnico Milano, Politecnico Torino, Torino, Federico II (Napoli), IUAV (Venezia), Trento, Bicocca (Milano)
 
-Non tutte le universita hanno tutte le facolta. Includi solo quelle che esistono realmente.
+REGOLE RETTE:
+- Pubbliche min: fascia ISEE piu bassa (no-tax area = 156 euro, o importo minimo dell'ateneo)
+- Pubbliche med: ISEE circa 25.000-30.000 euro (tipicamente 1000-1500 euro)
+- Pubbliche max: ISEE oltre 80.000 euro o senza ISEE (tipicamente 2400-3800 euro)
+- Politecnici hanno rette max leggermente piu alte (fino a 3800 euro)
+- Private min: retta con borsa massima o fascia ISEE bassa
+- Private med: retta standard pubblicata
+- Private max: retta massima del corso piu costoso
+- Bocconi Economia: min ~5900, med ~9200, max ~13000
+- LUISS: min ~5500, med ~8000-8500, max ~11000-12000
+- Cattolica: min ~3500-3800, med ~5500-6200, max ~8000-8900
+- IULM Comunicazione: min ~4500, med ~6500, max ~9000
+- San Raffaele Medicina: min ~8000, med ~14000, max ~20000
+- Humanitas Medicina: min ~9000, med ~15000, max ~20000
+- Campus Bio-Medico: min ~6000, med ~10000, max ~15000
 
-Per le PUBBLICHE:
-- min = retta minima (fascia ISEE piu bassa, spesso 156 euro per la no-tax area)
-- med = retta media (ISEE intorno a 25.000-30.000 euro)
-- max = retta massima (ISEE oltre 80.000 euro o senza ISEE)
+FORMATO: Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.
 
-Per le PRIVATE:
-- min = retta minima pubblicata (o con borsa di studio massima)
-- med = retta standard senza agevolazioni
-- max = retta massima per il corso piu costoso della facolta
-
-FORMATO DI RISPOSTA: Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti, niente testo prima o dopo il JSON.
-
-Ogni oggetto deve avere ESATTAMENTE questi campi:
-- facolta: string (DEVE essere uno dei 10 nomi elencati sopra, IDENTICO)
-- uni: string (nome breve, es. "Bocconi", "Politecnico Milano", "La Sapienza")
-- citta: string (es. "Milano", "Roma")
-- min: number (retta minima in euro)
-- med: number (retta media in euro)
-- max: number (retta massima in euro)
+Campi per ogni oggetto:
+- facolta: string (IDENTICO a uno dei 10 nomi sopra)
+- uni: string (nome breve: "Bocconi", "Politecnico Milano", "La Sapienza", ecc.)
+- citta: string
+- min: number (euro)
+- med: number (euro)
+- max: number (euro)
 - tipo: string ("Pubblica" | "Privata")
 
-L'array deve contenere almeno 50 oggetti totali (5-7 per ognuna delle 10 facolta).
-Ordina per facolta e poi per retta media crescente.
+Almeno 55 oggetti totali. Ordina per facolta poi per med crescente.
 
 JSON ARRAY:`;
 
-  console.log("  Calling Claude with web_search for universita research...");
+  console.log("  Calling Claude for universita knowledge extraction...");
 
   var res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -176,15 +167,8 @@ JSON ARRAY:`;
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 16000,
+      max_tokens: 12000,
       temperature: 0,
-      tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-          max_uses: 15,
-        }
-      ],
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -192,25 +176,14 @@ JSON ARRAY:`;
   if (!res.ok) throw new Error("Claude API error " + res.status + ": " + (await res.text()));
 
   var data = await res.json();
-
-  // Estrai il testo dalla risposta (contiene blocchi web_search_tool_result + text)
-  var raw = "";
-  if (data.content) {
-    for (var j = 0; j < data.content.length; j++) {
-      if (data.content[j].type === "text" && data.content[j].text) {
-        raw += data.content[j].text;
-      }
-    }
-  }
-  raw = raw.trim();
-
+  var raw = data.content && data.content[0] && data.content[0].text ? data.content[0].text.trim() : "";
   if (!raw) throw new Error("Empty response from Claude for universita");
 
   var cleaned = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim();
   var parsed = JSON.parse(cleaned);
   if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("Invalid universita result: not a non-empty array");
 
-  console.log("  Claude researched " + parsed.length + " university entries via web_search");
+  console.log("  Claude compiled " + parsed.length + " university entries from knowledge");
   return parsed;
 }
 
@@ -279,10 +252,9 @@ export default async function handler(req) {
     console.log("Processing " + category + "...");
 
     try {
-      // ─── UNIVERSITÀ: percorso speciale con web_search ───
+      // ─── UNIVERSITÀ: percorso dedicato (conoscenze Claude) ───
       if (category === "universita") {
-        console.log("  Using Claude web_search for autonomous research...");
-        var extracted = await extractUniversitaWithResearch();
+        var extracted = await extractUniversitaWithKnowledge();
 
         // Deduplica per uni + facolta
         var seen = new Set();
@@ -293,7 +265,7 @@ export default async function handler(req) {
           return true;
         });
 
-        // Raggruppa per facoltà (il frontend si aspetta { "Economia": [...], "Medicina": [...] })
+        // Raggruppa per facoltà
         var grouped = {};
         deduped.forEach(function (o) {
           var fac = o.facolta || "Altro";
@@ -302,11 +274,11 @@ export default async function handler(req) {
         });
 
         results[category] = grouped;
-        console.log("  Researched " + deduped.length + " entries across " + Object.keys(grouped).length + " facolta");
+        console.log("  Compiled " + deduped.length + " entries across " + Object.keys(grouped).length + " facolta");
         continue;
       }
 
-      // ─── ENERGIA / GAS / INTERNET: percorso classico con scraping ───
+      // ─── ENERGIA / GAS / INTERNET: percorso classico ───
       console.log("  Fetching from " + urls.length + " sources...");
 
       var textsWithSources = await Promise.all(
