@@ -16,8 +16,6 @@ const SOURCES = {
     "https://selectra.net/internet/guida/offerte/wifi-casa",
     "https://selectra.net/internet/score",
   ],
-  // Università: Claude compila la tabella usando le sue conoscenze aggiornate
-  universita: [],
 };
 
 const PROVIDER_LINKS = {
@@ -106,87 +104,6 @@ async function fetchPageText(url) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// UNIVERSITÀ: Claude compila la tabella rette A.A. 2025/2026
-// usando le sue conoscenze. Le rette cambiano 1 volta/anno,
-// quindi i dati di training di Claude sono affidabili.
-// ─────────────────────────────────────────────────────────────
-async function extractUniversitaWithKnowledge() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
-
-  var prompt = `Compila una tabella delle rette universitarie italiane A.A. 2025/2026.
-
-DEVI restituire dati per ESATTAMENTE queste 10 facolta (usa questi nomi IDENTICI come valore del campo "facolta"):
-Economia, Giurisprudenza, Ingegneria, Medicina, Architettura, Scienze Politiche, Lettere e Filosofia, Psicologia, Informatica, Scienze della Comunicazione
-
-Per OGNI facolta includi 5-7 universita scelte SOLO tra queste (includi solo quelle che offrono realmente quella facolta):
-
-PRIVATE: Bocconi (Milano), LUISS (Roma), Cattolica (Milano), IULM (Milano), San Raffaele (Milano), Humanitas (Milano), Campus Bio-Medico (Roma)
-PUBBLICHE: Statale Milano, La Sapienza (Roma), Bologna, Padova, Politecnico Milano, Politecnico Torino, Torino, Federico II (Napoli), IUAV (Venezia), Trento, Bicocca (Milano)
-
-REGOLE RETTE:
-- Pubbliche min: fascia ISEE piu bassa (no-tax area = 156 euro, o importo minimo dell'ateneo)
-- Pubbliche med: ISEE circa 25.000-30.000 euro (tipicamente 1000-1500 euro)
-- Pubbliche max: ISEE oltre 80.000 euro o senza ISEE (tipicamente 2400-3800 euro)
-- Politecnici hanno rette max leggermente piu alte (fino a 3800 euro)
-- Private min: retta con borsa massima o fascia ISEE bassa
-- Private med: retta standard pubblicata
-- Private max: retta massima del corso piu costoso
-- Bocconi Economia: min ~5900, med ~9200, max ~13000
-- LUISS: min ~5500, med ~8000-8500, max ~11000-12000
-- Cattolica: min ~3500-3800, med ~5500-6200, max ~8000-8900
-- IULM Comunicazione: min ~4500, med ~6500, max ~9000
-- San Raffaele Medicina: min ~8000, med ~14000, max ~20000
-- Humanitas Medicina: min ~9000, med ~15000, max ~20000
-- Campus Bio-Medico: min ~6000, med ~10000, max ~15000
-
-FORMATO: Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.
-
-Campi per ogni oggetto:
-- facolta: string (IDENTICO a uno dei 10 nomi sopra)
-- uni: string (nome breve: "Bocconi", "Politecnico Milano", "La Sapienza", ecc.)
-- citta: string
-- min: number (euro)
-- med: number (euro)
-- max: number (euro)
-- tipo: string ("Pubblica" | "Privata")
-
-Almeno 55 oggetti totali. Ordina per facolta poi per med crescente.
-
-JSON ARRAY:`;
-
-  console.log("  Calling Claude for universita knowledge extraction...");
-
-  var res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 12000,
-      temperature: 0,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-
-  if (!res.ok) throw new Error("Claude API error " + res.status + ": " + (await res.text()));
-
-  var data = await res.json();
-  var raw = data.content && data.content[0] && data.content[0].text ? data.content[0].text.trim() : "";
-  if (!raw) throw new Error("Empty response from Claude for universita");
-
-  var cleaned = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim();
-  var parsed = JSON.parse(cleaned);
-  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("Invalid universita result: not a non-empty array");
-
-  console.log("  Claude compiled " + parsed.length + " university entries from knowledge");
-  return parsed;
-}
-
 async function extractWithClaude(category, textsWithSources) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
@@ -249,50 +166,21 @@ export default async function handler(req) {
     var category = _a[_i][0];
     var urls = _a[_i][1];
 
-    console.log("Processing " + category + "...");
+    console.log("Fetching " + category + " from " + urls.length + " sources...");
+
+    var textsWithSources = await Promise.all(
+      urls.map(async function (url) { return { url: url, text: await fetchPageText(url) }; })
+    );
+
+    var validSources = textsWithSources.filter(function (s) { return s.text; });
+    console.log("  " + validSources.length + "/" + urls.length + " sources fetched");
+
+    if (validSources.length === 0) {
+      errors.push(category + ": all sources failed");
+      continue;
+    }
 
     try {
-      // ─── UNIVERSITÀ: percorso dedicato (conoscenze Claude) ───
-      if (category === "universita") {
-        var extracted = await extractUniversitaWithKnowledge();
-
-        // Deduplica per uni + facolta
-        var seen = new Set();
-        var deduped = extracted.filter(function (o) {
-          var key = (o.uni || "").toLowerCase().trim() + "|" + (o.facolta || "").toLowerCase().trim();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-
-        // Raggruppa per facoltà
-        var grouped = {};
-        deduped.forEach(function (o) {
-          var fac = o.facolta || "Altro";
-          if (!grouped[fac]) grouped[fac] = [];
-          grouped[fac].push({ uni: o.uni, citta: o.citta, min: o.min, med: o.med, max: o.max, tipo: o.tipo });
-        });
-
-        results[category] = grouped;
-        console.log("  Compiled " + deduped.length + " entries across " + Object.keys(grouped).length + " facolta");
-        continue;
-      }
-
-      // ─── ENERGIA / GAS / INTERNET: percorso classico ───
-      console.log("  Fetching from " + urls.length + " sources...");
-
-      var textsWithSources = await Promise.all(
-        urls.map(async function (url) { return { url: url, text: await fetchPageText(url) }; })
-      );
-
-      var validSources = textsWithSources.filter(function (s) { return s.text; });
-      console.log("  " + validSources.length + "/" + urls.length + " sources fetched");
-
-      if (validSources.length === 0) {
-        errors.push(category + ": all sources failed");
-        continue;
-      }
-
       var extracted = await extractWithClaude(category, textsWithSources);
 
       // Deduplicate by name + tipo + prezzo
@@ -328,11 +216,7 @@ export default async function handler(req) {
   var summary = {
     success: Object.keys(results).length > 0,
     categoriesUpdated: Object.keys(results),
-    offersCount: Object.fromEntries(Object.entries(results).map(function (e) {
-      var val = e[1];
-      var count = Array.isArray(val) ? val.length : Object.keys(val).length + " facolta";
-      return [e[0], count];
-    })),
+    offersCount: Object.fromEntries(Object.entries(results).map(function (e) { return [e[0], e[1].length]; })),
     errors: errors,
     timestamp: new Date().toISOString(),
   };
