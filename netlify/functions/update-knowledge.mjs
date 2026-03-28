@@ -3,14 +3,8 @@ import { getStore } from "@netlify/blobs";
 // ═══════════════════════════════════════════════════════════════════
 // UPDATE-KNOWLEDGE: Aggiorna Università, RC Auto, Fondi Pensione
 //
-// Funzione separata da update-prices per evitare il timeout di 60s.
-// Usa le conoscenze di Claude (non scraping) perché questi dati
-// cambiano raramente (1-2 volte/anno).
-//
-// LOGICA:
-//   1. Legge il blob "latest" (che contiene già energia/gas/internet)
-//   2. Chiede a Claude di compilare i dati per le 3 categorie
-//   3. Fa merge e risalva il blob con tutte le categorie insieme
+// OTTIMIZZAZIONE: Usa Haiku (10x più economico di Sonnet)
+// Per generare dati da conoscenze interne, Haiku è sufficiente.
 //
 // SCHEDULE: Ogni lunedì alle 07:00 (1 ora dopo update-prices)
 // ═══════════════════════════════════════════════════════════════════
@@ -27,7 +21,7 @@ async function askClaude(prompt, maxTokens) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: maxTokens || 8000,
       temperature: 0,
       messages: [{ role: "user", content: prompt }],
@@ -44,9 +38,6 @@ async function askClaude(prompt, maxTokens) {
   return JSON.parse(cleaned);
 }
 
-// ─────────────────────────────────────────────────────────────
-// UNIVERSITÀ — Rette A.A. 2025/2026
-// ─────────────────────────────────────────────────────────────
 async function getUniversita() {
   console.log("  Asking Claude for universita data...");
 
@@ -83,7 +74,6 @@ JSON ARRAY:`;
   var parsed = await askClaude(prompt, 10000);
   if (!Array.isArray(parsed) || parsed.length < 30) throw new Error("Universita: too few results (" + parsed.length + ")");
 
-  // Deduplica
   var seen = new Set();
   var deduped = parsed.filter(function (o) {
     var key = (o.uni || "").toLowerCase() + "|" + (o.facolta || "").toLowerCase();
@@ -92,7 +82,6 @@ JSON ARRAY:`;
     return true;
   });
 
-  // Raggruppa per facoltà
   var grouped = {};
   deduped.forEach(function (o) {
     var fac = o.facolta || "Altro";
@@ -104,10 +93,6 @@ JSON ARRAY:`;
   return grouped;
 }
 
-// ─────────────────────────────────────────────────────────────
-// RC AUTO — Prezzi assicurazione per profilo standard
-// Frontend: name, rc, furto, kasko, cristalli, assistenza, note
-// ─────────────────────────────────────────────────────────────
 async function getRcAuto() {
   console.log("  Asking Claude for rc_auto data...");
 
@@ -125,6 +110,7 @@ Per ogni compagnia fornisci i costi annui in euro di:
 - cristalli: garanzia Cristalli annua
 - assistenza: Assistenza Stradale annua
 - note: breve descrizione (max 40 caratteri)
+- link: URL del sito ufficiale della compagnia per preventivo (es. "https://www.allianzdirect.it/assicurazione-auto/")
 
 LINEE GUIDA PREZZI:
 - RC base: 280-420 euro (online piu economiche, tradizionali piu care)
@@ -132,11 +118,9 @@ LINEE GUIDA PREZZI:
 - Kasko: 350-520 euro
 - Cristalli: 30-50 euro
 - Assistenza: 20-40 euro
-- ConTe.it e Prima Assicurazioni sono tra le piu economiche
-- Generali e UnipolSai tradizionalmente piu care ma capillari
 
 FORMATO: SOLO JSON array valido. Niente markdown, backtick, commenti.
-Campi: name, rc, furto, kasko, cristalli, assistenza, note
+Campi: name, rc, furto, kasko, cristalli, assistenza, note, link
 Ordina per rc crescente.
 
 JSON ARRAY:`;
@@ -148,10 +132,6 @@ JSON ARRAY:`;
   return parsed;
 }
 
-// ─────────────────────────────────────────────────────────────
-// FONDI PENSIONE — ISC e rendimenti
-// Frontend: name, tipo, costo, rendimento5y, rendimento10y, settore, note
-// ─────────────────────────────────────────────────────────────
 async function getPensione() {
   console.log("  Asking Claude for pensione data...");
 
@@ -169,17 +149,17 @@ Includi ESATTAMENTE questi 7 fondi:
 Per ogni fondo fornisci:
 - name: nome del fondo
 - tipo: "Negoziale" | "Aperto" | "PIP"
-- costo: ISC (Indicatore Sintetico dei Costi) in percentuale annua
+- costo: ISC in percentuale annua
 - rendimento5y: rendimento medio annuo composto a 5 anni (%)
 - rendimento10y: rendimento medio annuo composto a 10 anni (%)
 - settore: categoria lavoratori
 - note: breve descrizione (max 50 caratteri)
+- link: URL del sito ufficiale del fondo (es. "https://www.cometafondo.it/")
 
 LINEE GUIDA:
 - Negoziali: ISC 0.15-0.25%, rendimenti 3.5-4.5% (5y), 4.5-5.5% (10y)
 - Aperti: ISC 1.0-1.4%, rendimenti 4.5-5.5% (5y), 5.0-6.0% (10y)
 - PIP: ISC 1.8-2.2%, rendimenti 3.0-3.5% (5y), 3.5-4.0% (10y)
-- Rendimenti riferiti al comparto bilanciato
 
 FORMATO: SOLO JSON array valido. Niente markdown, backtick, commenti.
 Ordina per costo (ISC) crescente.
@@ -193,9 +173,6 @@ JSON ARRAY:`;
   return parsed;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// HANDLER PRINCIPALE
-// ═══════════════════════════════════════════════════════════════════
 export default async function handler(req) {
   console.log("Starting knowledge update (universita, rc_auto, pensione)...");
 
@@ -203,7 +180,6 @@ export default async function handler(req) {
   var newData = {};
   var errors = [];
 
-  // 1. UNIVERSITÀ
   try {
     newData.universita = await getUniversita();
   } catch (err) {
@@ -211,7 +187,6 @@ export default async function handler(req) {
     console.error("  universita failed: " + err.message);
   }
 
-  // 2. RC AUTO
   try {
     newData.rc_auto = await getRcAuto();
   } catch (err) {
@@ -219,7 +194,6 @@ export default async function handler(req) {
     console.error("  rc_auto failed: " + err.message);
   }
 
-  // 3. FONDI PENSIONE
   try {
     newData.pensione = await getPensione();
   } catch (err) {
@@ -227,7 +201,6 @@ export default async function handler(req) {
     console.error("  pensione failed: " + err.message);
   }
 
-  // 4. MERGE con dati esistenti (energia, gas, internet)
   if (Object.keys(newData).length > 0) {
     var existing = {};
     try {
@@ -240,7 +213,6 @@ export default async function handler(req) {
       console.warn("  Could not read existing blob, starting fresh: " + e.message);
     }
 
-    // Merge: mantieni energia/gas/internet esistenti, aggiungi/sovrascrivi le nuove
     var merged = Object.assign({}, existing, newData);
 
     var payload = { lastUpdated: new Date().toISOString(), data: merged };
@@ -269,5 +241,5 @@ export default async function handler(req) {
   });
 }
 
-// Ogni lunedì alle 07:00 (1 ora dopo update-prices)
+// Ogni lunedì alle 07:00
 export var config = { schedule: "0 7 * * 1" };
