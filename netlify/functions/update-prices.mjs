@@ -127,6 +127,8 @@ async function extractWithClaude(category, textsWithSources) {
 
  var prompt = "Sei un estrattore di dati per un comparatore italiano di offerte " + categoryLabel + ".\n\nCOMPITO: Analizza i testi e estrai le offerte " + categoryLabel + ".\n\nREGOLE CRITICHE:\n1. Restituisci SOLO un JSON array valido. Niente markdown, niente backtick, niente commenti.\n2. Il campo \"prezzo\" deve essere il PREZZO UNITARIO (euro/kWh per energia, euro/Smc per gas, euro/mese per internet), NON la stima annua.\n3. NON duplicare: se la stessa offerta appare su piu fonti, includila UNA sola volta.\n4. Se un dato non e chiaro, usa il valore piu ragionevole. NON inventare offerte.\n5. Includi minimo 8, massimo 18 offerte. ASSICURATI DI INCLUDERE, se presenti nel testo, anche operatori come Pulsee, Iberdrola, Argos, SegnoVerde, Poste, Estra, Dimensione o Virgin Fibra.\n6. Ordina per prezzo crescente.\n7. Per internet, Fastweb offre FTTH fino a 2.5 Gbps - non confondere con le offerte FWA. Includi SEMPRE le offerte FTTH principali.\n8. Distingui chiaramente tra offerte a prezzo FISSO (bloccato 12-24 mesi) e VARIABILE (indicizzate PUN/PSV + spread).\n\nSCHEMA:\n" + schemas[category] + "\n\nTESTI:\n" + sourceBlock + "\n\nJSON ARRAY:";
 
+  // ═══ OTTIMIZZAZIONE COSTI: Haiku costa 10x meno di Sonnet ═══
+  // Per estrarre dati strutturati da testo, Haiku è più che sufficiente.
   var res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -135,7 +137,7 @@ async function extractWithClaude(category, textsWithSources) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 4000,
       temperature: 0,
       messages: [{ role: "user", content: prompt }],
@@ -156,7 +158,7 @@ async function extractWithClaude(category, textsWithSources) {
 }
 
 export default async function handler(req) {
-  console.log("Starting daily price update...");
+  console.log("Starting weekly price update...");
 
   var store = getStore("prices");
   var results = {};
@@ -183,7 +185,6 @@ export default async function handler(req) {
     try {
       var extracted = await extractWithClaude(category, textsWithSources);
 
-      // Deduplicate by name + tipo + prezzo
       var seen = new Set();
       var deduped = extracted.filter(function (o) {
         var key = (o.name || "").toLowerCase().trim() + "|" + (o.tipo || "").toLowerCase().trim() + "|" + o.prezzo;
@@ -192,7 +193,6 @@ export default async function handler(req) {
         return true;
       });
 
-      // Add provider links
       var withLinks = deduped.map(function (o) {
         return Object.assign({}, o, { link: guessProviderLink(o.name) || null });
       });
@@ -225,4 +225,7 @@ export default async function handler(req) {
   return new Response(JSON.stringify(summary, null, 2), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-export var config = { schedule: "0 6 * * *" };
+// ═══ OTTIMIZZAZIONE COSTI: da giornaliero a settimanale (lunedì 6:00) ═══
+// I prezzi luce/gas cambiano raramente — aggiornare 1 volta/settimana basta.
+// Risparmio: da ~€3.60/mese a ~€0.50/mese
+export var config = { schedule: "0 6 * * 1" };
