@@ -1,7 +1,41 @@
+import { getStore } from "@netlify/blobs";
+
 // ═══════════════════════════════════════════════════════════════════
-// ANALYZE-BILL: Riceve un PDF bolletta, lo invia a Claude, 
+// ANALYZE-BILL: Riceve un PDF bolletta, lo invia a Claude,
 // restituisce l'analisi strutturata con risparmio potenziale.
+//
+// OTTIMIZZAZIONI COSTI:
+// - Rate limiting: max 20 analisi/giorno (evita abusi e costi esplosivi)
+// - Sonnet mantenuto: leggere un PDF richiede intelligenza visiva
+// - max_tokens ridotto a 1500 (sufficiente per il JSON di risposta)
 // ═══════════════════════════════════════════════════════════════════
+
+const MAX_DAILY_ANALYSES = 20;
+
+async function checkRateLimit() {
+  try {
+    var store = getStore("rate-limits");
+    var today = new Date().toISOString().split("T")[0];
+    var raw = await store.get("analyze-bill-" + today);
+    var count = raw ? parseInt(raw, 10) : 0;
+    return { count: count, allowed: count < MAX_DAILY_ANALYSES, today: today };
+  } catch (err) {
+    // Se il blob store non è raggiungibile, permettiamo comunque (fail open)
+    console.warn("Rate limit check failed: " + err.message);
+    return { count: 0, allowed: true, today: new Date().toISOString().split("T")[0] };
+  }
+}
+
+async function incrementRateLimit(today) {
+  try {
+    var store = getStore("rate-limits");
+    var raw = await store.get("analyze-bill-" + today);
+    var count = raw ? parseInt(raw, 10) : 0;
+    await store.set("analyze-bill-" + today, String(count + 1));
+  } catch (err) {
+    console.warn("Rate limit increment failed: " + err.message);
+  }
+}
 
 export default async function handler(req) {
   const headers = {
@@ -19,6 +53,20 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers });
   }
 
+  // ═══ RATE LIMITING ═══
+  var rateCheck = await checkRateLimit();
+  if (!rateCheck.allowed) {
+    console.warn("Rate limit reached: " + rateCheck.count + "/" + MAX_DAILY_ANALYSES + " for " + rateCheck.today);
+    return new Response(
+      JSON.stringify({
+        error: "rate_limited",
+        message: "Servizio temporaneamente non disponibile. Abbiamo raggiunto il limite giornaliero di analisi gratuite (" + MAX_DAILY_ANALYSES + "/giorno). Riprova domani mattina.",
+        remaining: 0,
+      }),
+      { status: 429, headers }
+    );
+  }
+
   try {
     const body = await req.json();
     const { pdf, filename } = body;
@@ -30,6 +78,15 @@ export default async function handler(req) {
       );
     }
 
+    // Limita dimensione PDF (base64 ~1.33x del file originale)
+    // 5MB file = ~6.65MB base64
+    if (pdf.length > 7000000) {
+      return new Response(
+        JSON.stringify({ error: "too_large", message: "Il file è troppo grande (max 5 MB)." }),
+        { status: 413, headers }
+      );
+    }
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return new Response(
@@ -38,9 +95,10 @@ export default async function handler(req) {
       );
     }
 
-    console.log("Analyzing bill: " + (filename || "unknown") + " (" + Math.round(pdf.length * 0.75 / 1024) + " KB)");
+    console.log("Analyzing bill: " + (filename || "unknown") + " (" + Math.round(pdf.length * 0.75 / 1024) + " KB) — usage: " + (rateCheck.count + 1) + "/" + MAX_DAILY_ANALYSES);
 
     const prompt = `Sei un analista esperto di bollette italiane (luce e gas).
+IGNORA RIGOROSAMENTE tutti i dati personali: nome, cognome, indirizzo, codice fiscale, POD, PDR, IBAN.
 
 Analizza questa bolletta PDF e restituisci SOLO un JSON valido con questi campi:
 - tipo: string ("energia" | "gas" | "altro")
@@ -65,6 +123,7 @@ REGOLE:
 
 JSON:`;
 
+    // Sonnet per l'analisi PDF — richiede capacità visiva/documentale superiore
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -74,7 +133,7 @@ JSON:`;
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
+        max_tokens: 1500,
         temperature: 0,
         messages: [{
           role: "user",
@@ -118,7 +177,14 @@ JSON:`;
     const cleaned = raw.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = JSON.parse(cleaned);
 
-    console.log("Analysis complete: " + parsed.fornitore + " " + parsed.tipo + " - risparmio: " + parsed.risparmioAnnuo);
+    // ═══ Incrementa il contatore SOLO dopo un'analisi riuscita ═══
+    await incrementRateLimit(rateCheck.today);
+
+    var remaining = MAX_DAILY_ANALYSES - rateCheck.count - 1;
+    console.log("Analysis complete: " + parsed.fornitore + " " + parsed.tipo + " — remaining today: " + remaining);
+
+    // Aggiungi info rate limit alla risposta
+    parsed._rateLimit = { remaining: remaining, limit: MAX_DAILY_ANALYSES };
 
     return new Response(JSON.stringify(parsed), { status: 200, headers });
 
